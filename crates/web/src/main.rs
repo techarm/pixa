@@ -218,14 +218,13 @@ async fn api_compress(
         _ => "image/jpeg",
     };
 
+    let result_json = serde_json::to_string(&result).unwrap_or_default();
+
     Ok((
         StatusCode::OK,
         [
-            ("content-type", content_type),
-            (
-                "x-compress-result",
-                &serde_json::to_string(&result).unwrap_or_default(),
-            ),
+            ("content-type".to_string(), content_type.to_string()),
+            ("x-compress-result".to_string(), result_json),
         ],
         data,
     ))

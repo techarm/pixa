@@ -157,19 +157,27 @@ fn compress_jpeg(img: &DynamicImage, output: &Path, quality: u8) -> Result<(), C
     let mut comp = mozjpeg::Compress::new(mozjpeg::ColorSpace::JCS_RGB);
     comp.set_size(w as usize, h as usize);
     comp.set_quality(quality as f32);
-    comp.set_mem_dest();
-    comp.start_compress();
 
-    let raw = rgb.as_raw();
-    // Write scanlines
-    let stride = w as usize * 3;
-    for y in 0..h as usize {
-        let row = &raw[y * stride..(y + 1) * stride];
-        comp.write_scanlines(row);
-    }
+    let buf = Vec::new();
+    let mut started = comp.start_compress(buf).map_err(|e| {
+        CompressError::Image(image::ImageError::Encoding(
+            image::error::EncodingError::new(
+                image::error::ImageFormatHint::Exact(image::ImageFormat::Jpeg),
+                e,
+            ),
+        ))
+    })?;
 
-    comp.finish_compress();
-    let data = comp.data_to_vec().map_err(|e| {
+    started.write_scanlines(rgb.as_raw()).map_err(|e| {
+        CompressError::Image(image::ImageError::Encoding(
+            image::error::EncodingError::new(
+                image::error::ImageFormatHint::Exact(image::ImageFormat::Jpeg),
+                e,
+            ),
+        ))
+    })?;
+
+    let data = started.finish().map_err(|e| {
         CompressError::Image(image::ImageError::Encoding(
             image::error::EncodingError::new(
                 image::error::ImageFormatHint::Exact(image::ImageFormat::Jpeg),

@@ -11,6 +11,7 @@ path = "src/main.rs"
 [dependencies]
 pixa-core = { path = "../core" }
 clap = { version = "4", features = ["derive"] }
+image = "0.25"
 serde_json = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

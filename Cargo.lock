@@ -1404,6 +1404,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "image",
  "pixa-core",
  "serde_json",
  "tracing",
@@ -1431,7 +1432,9 @@ dependencies = [
 name = "pixa-web"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "axum",
+ "image",
  "pixa-core",
  "serde",
  "serde_json",

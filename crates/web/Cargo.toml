@@ -10,7 +10,9 @@ path = "src/main.rs"
 
 [dependencies]
 pixa-core = { path = "../core" }
+anyhow = "1"
 axum = { version = "0.8", features = ["multipart"] }
+image = "0.25"
 tokio = { version = "1", features = ["full"] }
 tower-http = { version = "0.6", features = ["fs", "cors"] }
 serde = { version = "1", features = ["derive"] }

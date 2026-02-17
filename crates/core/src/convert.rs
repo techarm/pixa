@@ -1,7 +1,6 @@
 //! Image format conversion
 
 use image::DynamicImage;
-use std::io::Cursor;
 use std::path::Path;
 use thiserror::Error;
 use tracing::info;

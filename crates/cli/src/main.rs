@@ -38,7 +38,7 @@ enum Commands {
         #[arg(long)]
         detect: bool,
         /// Detection confidence threshold (0.0-1.0)
-        #[arg(long, default_value = "0.25")]
+        #[arg(long, default_value = "0.35")]
         threshold: f32,
     },
 
@@ -211,6 +211,7 @@ fn main() -> Result<()> {
                 println!("Confidence: {:.1}%", result.confidence * 100.0);
                 println!("Size: {:?}", result.size);
                 println!("Spatial score: {:.3}", result.spatial_score);
+                println!("Gradient score: {:.3}", result.gradient_score);
                 println!("Variance score: {:.3}", result.variance_score);
             }
         }
@@ -302,7 +303,7 @@ fn main() -> Result<()> {
                     }
                 }
 
-                let result = match operation.as_str() {
+                let result: Result<()> = match operation.as_str() {
                     "remove-watermark" => {
                         let engine = engine.as_ref().unwrap();
                         let mut img = image::open(entry)?;
@@ -315,7 +316,9 @@ fn main() -> Result<()> {
                             webp_quality: quality,
                             ..Default::default()
                         };
-                        compress_image(entry, &out_path, &opts).map(|_| ())
+                        compress_image(entry, &out_path, &opts)
+                            .map(|_| ())
+                            .map_err(Into::into)
                     }
                     "convert" => convert_image(entry, &out_path).map_err(Into::into),
                     _ => unreachable!(),
