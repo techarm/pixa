@@ -39,6 +39,19 @@ async fn main() {
 
     let state = Arc::new(AppState { engine, upload_dir });
 
+    // Resolve static file directory:
+    //   1. STATIC_DIR env var (explicit override)
+    //   2. crates/web/static (cargo run from workspace root)
+    //   3. static (Docker / production)
+    let static_dir = std::env::var("STATIC_DIR").unwrap_or_else(|_| {
+        if std::path::Path::new("crates/web/static").exists() {
+            "crates/web/static".to_string()
+        } else {
+            "static".to_string()
+        }
+    });
+    info!("Static files: {}", static_dir);
+
     let app = Router::new()
         // API routes
         .route("/api/info", post(api_info))
@@ -50,7 +63,7 @@ async fn main() {
         .route("/api/prompt/providers", get(api_prompt_providers))
         .route("/api/health", get(api_health))
         // Static files for SPA
-        .fallback_service(ServeDir::new("static").append_index_html_on_directories(true))
+        .fallback_service(ServeDir::new(&static_dir).append_index_html_on_directories(true))
         .layer(CorsLayer::permissive())
         .layer(DefaultBodyLimit::max(50 * 1024 * 1024)) // 50MB
         .with_state(state);
