@@ -264,7 +264,7 @@ fn main() -> Result<()> {
                 if let Some(exif) = &info.exif {
                     println!("\nEXIF ({} fields):", exif.len());
                     let mut entries: Vec<_> = exif.iter().collect();
-                    entries.sort_by_key(|(k, _)| k.clone());
+                    entries.sort_by_key(|(k, _)| k.to_string());
                     for (key, value) in entries {
                         println!("  {key}: {value}");
                     }

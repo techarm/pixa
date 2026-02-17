@@ -12,7 +12,7 @@ use pixa_core::{
     prompt::{self, Provider, PromptOptions, PromptLanguage},
     watermark::{WatermarkEngine, WatermarkSize},
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 use tempfile::TempDir;
 use tower_http::{cors::CorsLayer, services::ServeDir};
