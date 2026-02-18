@@ -167,6 +167,18 @@ pub fn build_story_step_prompt(request: &StoryRequest, step: u8, total_steps: u8
     prompt
 }
 
+/// Build logo prompt with optimized parameters for clean, text-free logo generation.
+///
+/// Requests a bright green (#00FF00) chromakey background instead of transparent,
+/// because AI models cannot generate true transparency. The green background is
+/// then removed in post-processing using HSV color space detection.
+pub fn build_logo_prompt(request: &LogoRequest) -> String {
+    format!(
+        "{}, logo design, icon only, no text, no words, no letters, {} style, solid bright green (#00FF00) chroma key background, thin white outline around the logo, clean professional design, centered composition, high contrast",
+        request.prompt, request.style
+    )
+}
+
 /// Build diagram prompt.
 /// Matches nanobanana buildDiagramPrompt() - index.ts:592-607
 pub fn build_diagram_prompt(request: &DiagramRequest) -> String {
@@ -401,5 +413,39 @@ mod tests {
             prompt,
             "user auth flow, flowchart diagram, professional style, hierarchical layout, detailed level of detail, accent color scheme, detailed annotations and labels, clean technical illustration, clear visual hierarchy"
         );
+    }
+
+    #[test]
+    fn test_build_logo_prompt() {
+        let request = LogoRequest {
+            prompt: "rocket".into(),
+            style: "flat".into(),
+            format: OutputFormat::Png,
+            output_dir: None,
+            dry_run: false,
+        };
+        let prompt = build_logo_prompt(&request);
+        assert!(prompt.starts_with("rocket, logo design"));
+        assert!(prompt.contains("no text"));
+        assert!(prompt.contains("no words"));
+        assert!(prompt.contains("no letters"));
+        assert!(prompt.contains("flat style"));
+        assert!(prompt.contains("green"));
+        assert!(prompt.contains("chroma key"));
+        assert!(prompt.contains("white outline"));
+    }
+
+    #[test]
+    fn test_build_logo_prompt_minimal_style() {
+        let request = LogoRequest {
+            prompt: "mountain".into(),
+            style: "minimal".into(),
+            format: OutputFormat::Png,
+            output_dir: None,
+            dry_run: false,
+        };
+        let prompt = build_logo_prompt(&request);
+        assert!(prompt.contains("minimal style"));
+        assert!(prompt.contains("icon only"));
     }
 }

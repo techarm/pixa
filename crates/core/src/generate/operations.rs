@@ -473,6 +473,54 @@ pub async fn generate_diagram(
     })
 }
 
+/// Generate a production-ready logo.
+/// Uses optimized prompts for clean, text-free, transparent-background logos.
+pub async fn generate_logo(
+    client: Option<&GeminiClient>,
+    request: &LogoRequest,
+) -> Result<GenerateResult, GenerateError> {
+    let prompt = prompt_builder::build_logo_prompt(request);
+
+    let prompts_used = vec![prompt.clone()];
+
+    if request.dry_run {
+        return Ok(GenerateResult {
+            success: true,
+            message: "Dry run: logo prompt prepared".into(),
+            generated_files: vec![],
+            prompts_used,
+            api_calls_made: 0,
+        });
+    }
+
+    let client = client.ok_or(GenerateError::ApiKeyNotFound)?;
+
+    info!("Generating logo: {}", request.prompt);
+
+    let output_dir = resolve_output_dir(&request.output_dir)?;
+    let response = client.generate_from_text(&prompt).await?;
+
+    let mut generated_files = Vec::new();
+    if let Some(image_bytes) = response.image_data {
+        let filename_source = format!("logo_{}", request.prompt);
+        let filename = generate_filename(&filename_source, request.format, 0, &output_dir);
+        let path = output_dir.join(&filename);
+        tokio::fs::write(&path, &image_bytes).await?;
+        info!("Logo saved: {}", path.display());
+        generated_files.push(path);
+    } else {
+        return Err(GenerateError::NoImageInResponse);
+    }
+
+    Ok(GenerateResult {
+        success: true,
+        message: "Successfully generated logo".into(),
+        generated_files,
+        prompts_used,
+        api_calls_made: 1,
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Utilities
 // ---------------------------------------------------------------------------

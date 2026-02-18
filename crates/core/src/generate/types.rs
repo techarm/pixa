@@ -211,3 +211,13 @@ pub struct DiagramRequest {
     pub output_dir: Option<PathBuf>,
     pub dry_run: bool,
 }
+
+/// Logo generation request
+#[derive(Debug, Clone)]
+pub struct LogoRequest {
+    pub prompt: String,
+    pub style: String,
+    pub format: OutputFormat,
+    pub output_dir: Option<PathBuf>,
+    pub dry_run: bool,
+}

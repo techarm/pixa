@@ -3,9 +3,11 @@ use clap::{Parser, Subcommand};
 use pixa_core::{
     compress::{compress_image, CompressOptions},
     convert::convert_image,
+    favicon::{self, FaviconOptions},
     generate::{self, GeminiConfig, GeminiModel, OutputFormat},
     info::get_image_info,
     prompt::{self, PromptLanguage, PromptOptions, Provider},
+    remove_bg::{self, RemoveBgOptions},
     watermark::{WatermarkEngine, WatermarkSize},
 };
 use std::path::PathBuf;
@@ -138,6 +140,43 @@ enum Commands {
         list_providers: bool,
     },
 
+    /// Remove background from an image (make transparent)
+    ///
+    /// Uses remove.bg API for best quality (requires REMOVEBG_API_KEY env var).
+    /// Falls back to local flood fill if no API key is set.
+    #[command(alias = "rmbg")]
+    RemoveBg {
+        /// Input image file
+        input: PathBuf,
+        /// Output image file (default: {input}_nobg.png)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Color distance tolerance for local processing (0-100)
+        #[arg(long, default_value = "30")]
+        tolerance: u8,
+        /// Force local processing (skip remove.bg API)
+        #[arg(long)]
+        local: bool,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Generate a web-ready favicon/icon set from any image
+    Favicon {
+        /// Input image file (PNG, JPEG, WebP, etc.)
+        input: PathBuf,
+        /// Output directory for the icon set
+        #[arg(short, long, default_value = "favicon-output")]
+        output_dir: PathBuf,
+        /// PNG optimization level (0-6)
+        #[arg(long, default_value = "4")]
+        png_level: u8,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Generate images using Gemini AI
     #[command(alias = "gen")]
     Generate {
@@ -224,6 +263,36 @@ enum GenerateCommands {
         json: bool,
     },
 
+    /// Generate a production-ready logo using AI (green background + chromakey removal)
+    Logo {
+        /// Description of the logo to generate
+        prompt: String,
+        /// Visual style
+        #[arg(long, default_value = "flat", value_parser = ["flat", "gradient", "line-art", "3d", "minimal"])]
+        style: String,
+        /// Skip background removal (by default, green background is automatically removed)
+        #[arg(long)]
+        keep_bg: bool,
+        /// Also generate a complete favicon/icon set from the logo
+        #[arg(long)]
+        favicon: bool,
+        /// Output format
+        #[arg(long, default_value = "png", value_parser = ["png", "jpeg", "jpg"])]
+        format: String,
+        /// Gemini model to use
+        #[arg(long, default_value = "flash", value_parser = ["flash", "pro"])]
+        model: String,
+        /// Output directory
+        #[arg(short, long)]
+        output_dir: Option<PathBuf>,
+        /// Show prompt without calling API
+        #[arg(long)]
+        dry_run: bool,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Generate app icons, favicons, and UI elements
     Icon {
         /// Description of the icon to generate
@@ -243,6 +312,9 @@ enum GenerateCommands {
         /// Corner style
         #[arg(long, default_value = "rounded", value_parser = ["rounded", "sharp"])]
         corners: String,
+        /// Also generate a complete favicon/icon set from the first generated icon
+        #[arg(long)]
+        favicon: bool,
         /// Output format
         #[arg(long, default_value = "png", value_parser = ["png", "jpeg", "jpg"])]
         format: String,
@@ -650,6 +722,66 @@ async fn main() -> Result<()> {
             }
         }
 
+        Commands::RemoveBg {
+            input,
+            output,
+            tolerance,
+            local,
+            json,
+        } => {
+            let out_path = output.unwrap_or_else(|| {
+                let stem = input.file_stem().unwrap_or_default().to_string_lossy();
+                input.with_file_name(format!("{stem}_nobg.png"))
+            });
+
+            let api_key = if !local {
+                std::env::var("REMOVEBG_API_KEY").ok()
+            } else {
+                None
+            };
+            let opts = RemoveBgOptions {
+                tolerance,
+                api_key,
+                use_local: local,
+            };
+            let result = remove_bg::remove_background(&input, &out_path, &opts).await?;
+
+            if json {
+                println!("{}", serde_json::to_string_pretty(&result)?);
+            } else {
+                println!("Background removed: {}", out_path.display());
+                println!(
+                    "Pixels removed: {} / {} ({:.1}%)",
+                    result.pixels_removed, result.total_pixels, result.removal_percent
+                );
+            }
+        }
+
+        Commands::Favicon {
+            input,
+            output_dir,
+            png_level,
+            json,
+        } => {
+            let opts = FaviconOptions { png_level };
+            let result = favicon::generate_favicon_set(&input, &output_dir, &opts)?;
+
+            if json {
+                println!("{}", serde_json::to_string_pretty(&result)?);
+            } else {
+                println!("Favicon set generated in: {}", output_dir.display());
+                println!();
+                for file in &result.generated_files {
+                    println!("  {}", file.display());
+                }
+                println!();
+                println!("Total size: {}", format_size(result.total_size));
+                println!();
+                println!("HTML snippet:");
+                println!("{}", result.html_snippet);
+            }
+        }
+
         Commands::Generate { command } => {
             handle_generate_command(command).await?;
         }
@@ -745,6 +877,91 @@ async fn handle_generate_command(command: GenerateCommands) -> Result<()> {
             print_result(&result, json)?;
         }
 
+        GenerateCommands::Logo {
+            prompt,
+            style,
+            keep_bg,
+            favicon,
+            format,
+            model,
+            output_dir,
+            dry_run,
+            json,
+        } => {
+            let fmt = parse_format(&format)?;
+            let request = generate::LogoRequest {
+                prompt,
+                style,
+                format: fmt,
+                output_dir: output_dir.clone(),
+                dry_run,
+            };
+
+            if !dry_run {
+                print_cost_warning(1);
+            }
+
+            let client = create_client_unless_dry_run(&model, dry_run)?;
+            let result = generate::generate_logo(client.as_ref(), &request).await?;
+            print_result(&result, json)?;
+
+            // Post-processing pipeline (only when not dry-run and files were generated)
+            if !result.generated_files.is_empty() {
+                let logo_path = &result.generated_files[0];
+
+                // Step 1: Chromakey green background removal (default, skip with --keep-bg)
+                let final_path = if !keep_bg {
+                    let nobg_path = logo_path.with_extension("").with_file_name(
+                        format!(
+                            "{}_nobg.png",
+                            logo_path
+                                .file_stem()
+                                .unwrap_or_default()
+                                .to_string_lossy()
+                        ),
+                    );
+                    match remove_bg::remove_green_background_file(logo_path, &nobg_path) {
+                        Ok(bg_result) => {
+                            println!(
+                                "\nGreen background removed: {:.1}% pixels transparentized -> {}",
+                                bg_result.removal_percent,
+                                nobg_path.display()
+                            );
+                            nobg_path
+                        }
+                        Err(e) => {
+                            eprintln!("\nWarning: Background removal failed: {e}");
+                            logo_path.clone()
+                        }
+                    }
+                } else {
+                    logo_path.clone()
+                };
+
+                // Step 2: Favicon set generation (with --favicon flag)
+                if favicon {
+                    let favicon_dir = output_dir
+                        .unwrap_or_else(|| PathBuf::from("pixa-output"))
+                        .join("favicon");
+
+                    let opts = FaviconOptions::default();
+                    match favicon::generate_favicon_set(&final_path, &favicon_dir, &opts) {
+                        Ok(fav_result) => {
+                            println!("\nFavicon set generated in: {}", favicon_dir.display());
+                            for f in &fav_result.generated_files {
+                                println!("  {}", f.display());
+                            }
+                            println!("\nHTML snippet:");
+                            println!("{}", fav_result.html_snippet);
+                        }
+                        Err(e) => {
+                            eprintln!("\nWarning: Favicon generation failed: {e}");
+                        }
+                    }
+                }
+            }
+        }
+
         GenerateCommands::Icon {
             prompt,
             sizes,
@@ -752,6 +969,7 @@ async fn handle_generate_command(command: GenerateCommands) -> Result<()> {
             style,
             background,
             corners,
+            favicon,
             format,
             model,
             output_dir,
@@ -768,7 +986,7 @@ async fn handle_generate_command(command: GenerateCommands) -> Result<()> {
                 background,
                 corners,
                 format: fmt,
-                output_dir,
+                output_dir: output_dir.clone(),
                 dry_run,
             };
 
@@ -779,6 +997,29 @@ async fn handle_generate_command(command: GenerateCommands) -> Result<()> {
             let client = create_client_unless_dry_run(&model, dry_run)?;
             let result = generate::generate_icon(client.as_ref(), &request).await?;
             print_result(&result, json)?;
+
+            // Generate favicon set from the first generated icon
+            if favicon && !result.generated_files.is_empty() {
+                let source = &result.generated_files[0];
+                let favicon_dir = output_dir
+                    .unwrap_or_else(|| PathBuf::from("pixa-output"))
+                    .join("favicon");
+
+                let opts = FaviconOptions::default();
+                match favicon::generate_favicon_set(source, &favicon_dir, &opts) {
+                    Ok(fav_result) => {
+                        println!("\nFavicon set generated in: {}", favicon_dir.display());
+                        for f in &fav_result.generated_files {
+                            println!("  {}", f.display());
+                        }
+                        println!("\nHTML snippet:");
+                        println!("{}", fav_result.html_snippet);
+                    }
+                    Err(e) => {
+                        eprintln!("\nWarning: Favicon generation failed: {e}");
+                    }
+                }
+            }
         }
 
         GenerateCommands::Pattern {

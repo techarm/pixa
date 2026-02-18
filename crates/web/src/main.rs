@@ -5,12 +5,15 @@ use axum::{
     response::{IntoResponse, Json},
     routing::{get, post},
 };
+use base64::Engine as _;
 use pixa_core::{
     compress::{compress_image, CompressOptions},
     convert::convert_image,
+    favicon::{self, FaviconOptions},
     generate::{self, GeminiClient, GeminiConfig},
     info::get_image_info,
     prompt::{self, Provider, PromptOptions, PromptLanguage},
+    remove_bg::{self, RemoveBgOptions},
     watermark::{WatermarkEngine, WatermarkSize},
 };
 use serde::Deserialize;
@@ -90,6 +93,10 @@ async fn main() {
         .route("/api/generate/pattern", post(api_generate_pattern))
         .route("/api/generate/story", post(api_generate_story))
         .route("/api/generate/diagram", post(api_generate_diagram))
+        .route("/api/generate/logo", post(api_generate_logo))
+        // Image processing routes
+        .route("/api/remove-bg", post(api_remove_bg))
+        .route("/api/favicon", post(api_favicon))
         // Static files for SPA
         .fallback_service(ServeDir::new(&static_dir).append_index_html_on_directories(true))
         .layer(CorsLayer::permissive())
@@ -643,4 +650,167 @@ async fn api_generate_diagram(
 
     let result = generate::generate_diagram(Some(client), &request).await?;
     Ok(Json(serde_json::to_value(result)?))
+}
+
+// ---------------------------------------------------------------------------
+// Logo generation endpoint
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+struct GenerateLogoParams {
+    prompt: String,
+    style: Option<String>,
+    keep_bg: Option<bool>,
+    favicon: Option<bool>,
+    format: Option<String>,
+    dry_run: Option<bool>,
+}
+
+async fn api_generate_logo(
+    state: axum::extract::State<Arc<AppState>>,
+    Json(params): Json<GenerateLogoParams>,
+) -> AppResult<Json<serde_json::Value>> {
+    let client = require_gemini_client(&state)?;
+
+    let request = generate::LogoRequest {
+        prompt: params.prompt,
+        style: params.style.unwrap_or_else(|| "flat".into()),
+        format: params.format.and_then(|f| f.parse().ok()).unwrap_or_default(),
+        output_dir: Some(state.upload_dir.path().to_path_buf()),
+        dry_run: params.dry_run.unwrap_or(false),
+    };
+
+    let result = generate::generate_logo(Some(client), &request).await?;
+    let mut response = serde_json::to_value(&result)?;
+
+    // Post-processing: chromakey green background removal (default unless keep_bg=true)
+    if !params.keep_bg.unwrap_or(false) && !result.generated_files.is_empty() {
+        let logo_path = &result.generated_files[0];
+        let nobg_path = logo_path.with_file_name(format!(
+            "{}_nobg.png",
+            logo_path.file_stem().unwrap_or_default().to_string_lossy()
+        ));
+        if let Ok(bg_result) = remove_bg::remove_green_background_file(logo_path, &nobg_path) {
+            response["background_removed"] = serde_json::json!({
+                "path": nobg_path,
+                "pixels_removed": bg_result.pixels_removed,
+                "removal_percent": bg_result.removal_percent,
+            });
+
+            // Generate favicon from the bg-removed image if requested
+            if params.favicon.unwrap_or(false) {
+                let favicon_dir = state.upload_dir.path().join(format!("favicon_{}", uuid::Uuid::new_v4()));
+                let fav_opts = FaviconOptions::default();
+                if let Ok(fav_result) = favicon::generate_favicon_set(&nobg_path, &favicon_dir, &fav_opts) {
+                    response["favicon"] = serde_json::to_value(&fav_result)?;
+                }
+            }
+        }
+    } else if params.favicon.unwrap_or(false) && !result.generated_files.is_empty() {
+        let favicon_dir = state.upload_dir.path().join(format!("favicon_{}", uuid::Uuid::new_v4()));
+        let fav_opts = FaviconOptions::default();
+        if let Ok(fav_result) = favicon::generate_favicon_set(&result.generated_files[0], &favicon_dir, &fav_opts) {
+            response["favicon"] = serde_json::to_value(&fav_result)?;
+        }
+    }
+
+    Ok(Json(response))
+}
+
+// ---------------------------------------------------------------------------
+// Background removal endpoint
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+struct RemoveBgParams {
+    tolerance: Option<u8>,
+    local: Option<bool>,
+}
+
+async fn api_remove_bg(
+    state: axum::extract::State<Arc<AppState>>,
+    Query(params): Query<RemoveBgParams>,
+    multipart: Multipart,
+) -> AppResult<impl IntoResponse> {
+    let (path, _filename) = save_upload(&state, multipart).await?;
+
+    let out_path = state.upload_dir.path().join(format!("nobg_{}.png", uuid::Uuid::new_v4()));
+    let use_local = params.local.unwrap_or(false);
+    let api_key = if !use_local {
+        std::env::var("REMOVEBG_API_KEY").ok()
+    } else {
+        None
+    };
+    let opts = RemoveBgOptions {
+        tolerance: params.tolerance.unwrap_or(30),
+        api_key,
+        use_local,
+    };
+    let result = remove_bg::remove_background(&path, &out_path, &opts).await?;
+    let data = tokio::fs::read(&out_path).await?;
+
+    let _ = tokio::fs::remove_file(&path).await;
+    let _ = tokio::fs::remove_file(&out_path).await;
+
+    let result_json = serde_json::to_string(&result).unwrap_or_default();
+
+    Ok((
+        StatusCode::OK,
+        [
+            ("content-type".to_string(), "image/png".to_string()),
+            ("x-remove-bg-result".to_string(), result_json),
+        ],
+        data,
+    ))
+}
+
+// ---------------------------------------------------------------------------
+// Favicon generation endpoint
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+struct FaviconParams {
+    png_level: Option<u8>,
+}
+
+async fn api_favicon(
+    state: axum::extract::State<Arc<AppState>>,
+    Query(params): Query<FaviconParams>,
+    multipart: Multipart,
+) -> AppResult<Json<serde_json::Value>> {
+    let (path, _filename) = save_upload(&state, multipart).await?;
+
+    let favicon_dir = state.upload_dir.path().join(format!("favicon_{}", uuid::Uuid::new_v4()));
+    let opts = FaviconOptions {
+        png_level: params.png_level.unwrap_or(4),
+    };
+
+    let result = favicon::generate_favicon_set(&path, &favicon_dir, &opts)?;
+
+    // Read generated files and encode as base64 for JSON response
+    let mut files = Vec::new();
+    for file_path in &result.generated_files {
+        let data = tokio::fs::read(file_path).await?;
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&data);
+        let filename = file_path.file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        files.push(serde_json::json!({
+            "filename": filename,
+            "size": data.len(),
+            "data": b64,
+        }));
+    }
+
+    // Cleanup
+    let _ = tokio::fs::remove_file(&path).await;
+    let _ = tokio::fs::remove_dir_all(&favicon_dir).await;
+
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "files": files,
+        "html_snippet": result.html_snippet,
+        "total_size": result.total_size,
+        "icons": result.icons,
+    })))
 }
