@@ -32,9 +32,6 @@ pub enum GenerateError {
     #[error("Image file not found: {0}")]
     ImageNotFound(String),
 
-    #[error("Config error: {0}")]
-    ConfigError(String),
-
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 

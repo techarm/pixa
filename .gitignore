@@ -19,3 +19,4 @@ Thumbs.db
 
 # Docker persistent data
 /data/
+pixa-output

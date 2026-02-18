@@ -1,5 +1,4 @@
 pub mod client;
-pub mod config;
 pub mod error;
 pub mod operations;
 pub mod prompt_builder;

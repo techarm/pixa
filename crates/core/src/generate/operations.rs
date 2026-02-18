@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use tracing::{debug, info, warn};
 
 use super::client::GeminiClient;
-use super::config;
 use super::error::GenerateError;
 use super::prompt_builder;
 use super::types::*;
@@ -18,8 +17,7 @@ pub async fn generate_image(
     client: Option<&GeminiClient>,
     request: &ImageRequest,
 ) -> Result<GenerateResult, GenerateError> {
-    let cfg = config::load_image_config()?;
-    let prompts = prompt_builder::build_image_prompts(&cfg, request);
+    let prompts = prompt_builder::build_image_prompts(request);
 
     if request.dry_run {
         return Ok(GenerateResult {
@@ -102,8 +100,6 @@ pub async fn edit_image(
     client: Option<&GeminiClient>,
     request: &EditRequest,
 ) -> Result<GenerateResult, GenerateError> {
-    let cfg = config::load_edit_config()?;
-
     if !request.input.exists() {
         return Err(GenerateError::ImageNotFound(
             request.input.display().to_string(),
@@ -137,7 +133,7 @@ pub async fn edit_image(
     let mut generated_files = Vec::new();
 
     if let Some(result_bytes) = response.image_data {
-        let filename_source = format!("{}_{}", cfg.prompt.filename_prefix, request.prompt);
+        let filename_source = format!("edit_{}", request.prompt);
         let filename = generate_filename(&filename_source, request.format, 0, &output_dir);
         let path = output_dir.join(&filename);
         tokio::fs::write(&path, &result_bytes).await?;
@@ -162,8 +158,6 @@ pub async fn restore_image(
     client: Option<&GeminiClient>,
     request: &RestoreRequest,
 ) -> Result<GenerateResult, GenerateError> {
-    let cfg = config::load_restore_config()?;
-
     if !request.input.exists() {
         return Err(GenerateError::ImageNotFound(
             request.input.display().to_string(),
@@ -197,7 +191,7 @@ pub async fn restore_image(
     let mut generated_files = Vec::new();
 
     if let Some(result_bytes) = response.image_data {
-        let filename_source = format!("{}_{}", cfg.prompt.filename_prefix, request.prompt);
+        let filename_source = format!("restore_{}", request.prompt);
         let filename = generate_filename(&filename_source, request.format, 0, &output_dir);
         let path = output_dir.join(&filename);
         tokio::fs::write(&path, &result_bytes).await?;
@@ -222,8 +216,7 @@ pub async fn generate_icon(
     client: Option<&GeminiClient>,
     request: &IconRequest,
 ) -> Result<GenerateResult, GenerateError> {
-    let cfg = config::load_icon_config()?;
-    let prompt = prompt_builder::build_icon_prompt(&cfg, request);
+    let prompt = prompt_builder::build_icon_prompt(request);
 
     let prompts_used = vec![prompt.clone()];
 
@@ -295,8 +288,7 @@ pub async fn generate_pattern(
     client: Option<&GeminiClient>,
     request: &PatternRequest,
 ) -> Result<GenerateResult, GenerateError> {
-    let cfg = config::load_pattern_config()?;
-    let prompt = prompt_builder::build_pattern_prompt(&cfg, request);
+    let prompt = prompt_builder::build_pattern_prompt(request);
 
     let prompts_used = vec![prompt.clone()];
 
@@ -343,12 +335,11 @@ pub async fn generate_story(
     client: Option<&GeminiClient>,
     request: &StoryRequest,
 ) -> Result<GenerateResult, GenerateError> {
-    let cfg = config::load_story_config()?;
     let total_steps = request.steps;
 
     // Build all step prompts
     let prompts_used: Vec<String> = (1..=total_steps)
-        .map(|step| prompt_builder::build_story_step_prompt(&cfg, request, step, total_steps))
+        .map(|step| prompt_builder::build_story_step_prompt(request, step, total_steps))
         .collect();
 
     if request.dry_run {
@@ -441,8 +432,7 @@ pub async fn generate_diagram(
     client: Option<&GeminiClient>,
     request: &DiagramRequest,
 ) -> Result<GenerateResult, GenerateError> {
-    let cfg = config::load_diagram_config()?;
-    let prompt = prompt_builder::build_diagram_prompt(&cfg, request);
+    let prompt = prompt_builder::build_diagram_prompt(request);
 
     let prompts_used = vec![prompt.clone()];
 
