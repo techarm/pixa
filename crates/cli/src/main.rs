@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 use pixa_core::{
     compress::{compress_image, CompressOptions},
     convert::convert_image,
+    generate::{self, GeminiConfig, GeminiModel, OutputFormat},
     info::get_image_info,
     prompt::{self, PromptLanguage, PromptOptions, Provider},
     watermark::{WatermarkEngine, WatermarkSize},
@@ -136,9 +137,240 @@ enum Commands {
         #[arg(long)]
         list_providers: bool,
     },
+
+    /// Generate images using Gemini AI
+    #[command(alias = "gen")]
+    Generate {
+        #[command(subcommand)]
+        command: GenerateCommands,
+    },
 }
 
-fn main() -> Result<()> {
+#[derive(Subcommand)]
+enum GenerateCommands {
+    /// Generate images from text prompt
+    Image {
+        /// Text prompt describing the image to generate
+        prompt: String,
+        /// Number of images to generate (1-8)
+        #[arg(short = 'n', long, default_value = "1")]
+        count: u8,
+        /// Comma-separated artistic styles (e.g., watercolor,anime)
+        #[arg(long, value_delimiter = ',')]
+        styles: Vec<String>,
+        /// Comma-separated variation types (lighting,angle,color-palette,composition,mood,season,time-of-day)
+        #[arg(long, value_delimiter = ',')]
+        variations: Vec<String>,
+        /// Output format
+        #[arg(long, default_value = "png", value_parser = ["png", "jpeg", "jpg"])]
+        format: String,
+        /// Gemini model to use
+        #[arg(long, default_value = "flash", value_parser = ["flash", "pro"])]
+        model: String,
+        /// Output directory
+        #[arg(short, long)]
+        output_dir: Option<PathBuf>,
+        /// Show prompts without calling API
+        #[arg(long)]
+        dry_run: bool,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Edit an existing image using AI
+    Edit {
+        /// Input image file
+        input: PathBuf,
+        /// Text instruction for editing
+        prompt: String,
+        /// Output format
+        #[arg(long, default_value = "png", value_parser = ["png", "jpeg", "jpg"])]
+        format: String,
+        /// Gemini model to use
+        #[arg(long, default_value = "flash", value_parser = ["flash", "pro"])]
+        model: String,
+        /// Output directory
+        #[arg(short, long)]
+        output_dir: Option<PathBuf>,
+        /// Show prompt without calling API
+        #[arg(long)]
+        dry_run: bool,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Restore/enhance an image using AI
+    Restore {
+        /// Input image file
+        input: PathBuf,
+        /// Restoration instruction
+        prompt: String,
+        /// Output format
+        #[arg(long, default_value = "png", value_parser = ["png", "jpeg", "jpg"])]
+        format: String,
+        /// Gemini model to use
+        #[arg(long, default_value = "flash", value_parser = ["flash", "pro"])]
+        model: String,
+        /// Output directory
+        #[arg(short, long)]
+        output_dir: Option<PathBuf>,
+        /// Show prompt without calling API
+        #[arg(long)]
+        dry_run: bool,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Generate app icons, favicons, and UI elements
+    Icon {
+        /// Description of the icon to generate
+        prompt: String,
+        /// Comma-separated icon sizes in pixels (16,32,64,128,256,512,1024)
+        #[arg(long, value_delimiter = ',', default_value = "256")]
+        sizes: Vec<u32>,
+        /// Icon type
+        #[arg(long, default_value = "app-icon", value_parser = ["app-icon", "favicon", "ui-element"])]
+        r#type: String,
+        /// Visual style
+        #[arg(long, default_value = "modern", value_parser = ["flat", "skeuomorphic", "minimal", "modern"])]
+        style: String,
+        /// Background type
+        #[arg(long, default_value = "transparent")]
+        background: String,
+        /// Corner style
+        #[arg(long, default_value = "rounded", value_parser = ["rounded", "sharp"])]
+        corners: String,
+        /// Output format
+        #[arg(long, default_value = "png", value_parser = ["png", "jpeg", "jpg"])]
+        format: String,
+        /// Gemini model to use
+        #[arg(long, default_value = "flash", value_parser = ["flash", "pro"])]
+        model: String,
+        /// Output directory
+        #[arg(short, long)]
+        output_dir: Option<PathBuf>,
+        /// Show prompt without calling API
+        #[arg(long)]
+        dry_run: bool,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Generate seamless patterns and textures
+    Pattern {
+        /// Description of the pattern to generate
+        prompt: String,
+        /// Pattern type
+        #[arg(long, default_value = "seamless", value_parser = ["seamless", "texture", "wallpaper"])]
+        r#type: String,
+        /// Pattern style
+        #[arg(long, default_value = "abstract", value_parser = ["geometric", "organic", "abstract", "floral", "tech"])]
+        style: String,
+        /// Element density
+        #[arg(long, default_value = "medium", value_parser = ["sparse", "medium", "dense"])]
+        density: String,
+        /// Color scheme
+        #[arg(long, default_value = "colorful", value_parser = ["mono", "duotone", "colorful"])]
+        colors: String,
+        /// Pattern tile size (e.g., "256x256")
+        #[arg(long, default_value = "256x256")]
+        size: String,
+        /// Output format
+        #[arg(long, default_value = "png", value_parser = ["png", "jpeg", "jpg"])]
+        format: String,
+        /// Gemini model to use
+        #[arg(long, default_value = "flash", value_parser = ["flash", "pro"])]
+        model: String,
+        /// Output directory
+        #[arg(short, long)]
+        output_dir: Option<PathBuf>,
+        /// Show prompt without calling API
+        #[arg(long)]
+        dry_run: bool,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Generate sequential story/process images
+    Story {
+        /// Description of the story or process
+        prompt: String,
+        /// Number of sequential images (2-8)
+        #[arg(long, default_value = "4")]
+        steps: u8,
+        /// Sequence type
+        #[arg(long, default_value = "story", value_parser = ["story", "process", "tutorial", "timeline"])]
+        r#type: String,
+        /// Visual consistency
+        #[arg(long, default_value = "consistent", value_parser = ["consistent", "evolving"])]
+        style: String,
+        /// Transition style between steps
+        #[arg(long, default_value = "smooth", value_parser = ["smooth", "dramatic", "fade"])]
+        transition: String,
+        /// Output format
+        #[arg(long, default_value = "png", value_parser = ["png", "jpeg", "jpg"])]
+        format: String,
+        /// Gemini model to use
+        #[arg(long, default_value = "flash", value_parser = ["flash", "pro"])]
+        model: String,
+        /// Output directory
+        #[arg(short, long)]
+        output_dir: Option<PathBuf>,
+        /// Show prompts without calling API
+        #[arg(long)]
+        dry_run: bool,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Generate technical diagrams
+    Diagram {
+        /// Description of the diagram
+        prompt: String,
+        /// Diagram type
+        #[arg(long, default_value = "flowchart", value_parser = ["flowchart", "architecture", "network", "database", "wireframe", "mindmap", "sequence"])]
+        r#type: String,
+        /// Visual style
+        #[arg(long, default_value = "professional", value_parser = ["professional", "clean", "hand-drawn", "technical"])]
+        style: String,
+        /// Layout orientation
+        #[arg(long, default_value = "hierarchical", value_parser = ["horizontal", "vertical", "hierarchical", "circular"])]
+        layout: String,
+        /// Level of detail
+        #[arg(long, default_value = "detailed", value_parser = ["simple", "detailed", "comprehensive"])]
+        complexity: String,
+        /// Color scheme
+        #[arg(long, default_value = "accent", value_parser = ["mono", "accent", "categorical"])]
+        colors: String,
+        /// Annotation level
+        #[arg(long, default_value = "detailed", value_parser = ["minimal", "detailed"])]
+        annotations: String,
+        /// Output format
+        #[arg(long, default_value = "png", value_parser = ["png", "jpeg", "jpg"])]
+        format: String,
+        /// Gemini model to use
+        #[arg(long, default_value = "flash", value_parser = ["flash", "pro"])]
+        model: String,
+        /// Output directory
+        #[arg(short, long)]
+        output_dir: Option<PathBuf>,
+        /// Show prompt without calling API
+        #[arg(long)]
+        dry_run: bool,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     // Setup logging
@@ -255,7 +487,7 @@ fn main() -> Result<()> {
                 println!("File:       {}", info.file_name);
                 println!("Format:     {}", info.format);
                 println!("Size:       {} ({})", info.file_size_human, info.file_size);
-                println!("Dimensions: {}×{}", info.width, info.height);
+                println!("Dimensions: {}x{}", info.width, info.height);
                 println!("Pixels:     {}", info.pixel_count);
                 println!("Color:      {}", info.color_type);
                 println!("Bit depth:  {}", info.bit_depth);
@@ -417,8 +649,300 @@ fn main() -> Result<()> {
                 }
             }
         }
+
+        Commands::Generate { command } => {
+            handle_generate_command(command).await?;
+        }
     }
 
+    Ok(())
+}
+
+async fn handle_generate_command(command: GenerateCommands) -> Result<()> {
+    match command {
+        GenerateCommands::Image {
+            prompt,
+            count,
+            styles,
+            variations,
+            format,
+            model,
+            output_dir,
+            dry_run,
+            json,
+        } => {
+            let fmt = parse_format(&format)?;
+            let request = generate::ImageRequest {
+                prompt,
+                count,
+                styles,
+                variations,
+                format: fmt,
+                output_dir,
+                dry_run,
+            };
+
+            if !dry_run {
+                print_cost_warning(count.max(1) as u32);
+            }
+
+            let client = create_client_unless_dry_run(&model, dry_run)?;
+            let result = generate::generate_image(client.as_ref(), &request).await?;
+            print_result(&result, json)?;
+        }
+
+        GenerateCommands::Edit {
+            input,
+            prompt,
+            format,
+            model,
+            output_dir,
+            dry_run,
+            json,
+        } => {
+            let fmt = parse_format(&format)?;
+            let request = generate::EditRequest {
+                input,
+                prompt,
+                format: fmt,
+                output_dir,
+                dry_run,
+            };
+
+            if !dry_run {
+                print_cost_warning(1);
+            }
+
+            let client = create_client_unless_dry_run(&model, dry_run)?;
+            let result = generate::edit_image(client.as_ref(), &request).await?;
+            print_result(&result, json)?;
+        }
+
+        GenerateCommands::Restore {
+            input,
+            prompt,
+            format,
+            model,
+            output_dir,
+            dry_run,
+            json,
+        } => {
+            let fmt = parse_format(&format)?;
+            let request = generate::RestoreRequest {
+                input,
+                prompt,
+                format: fmt,
+                output_dir,
+                dry_run,
+            };
+
+            if !dry_run {
+                print_cost_warning(1);
+            }
+
+            let client = create_client_unless_dry_run(&model, dry_run)?;
+            let result = generate::restore_image(client.as_ref(), &request).await?;
+            print_result(&result, json)?;
+        }
+
+        GenerateCommands::Icon {
+            prompt,
+            sizes,
+            r#type,
+            style,
+            background,
+            corners,
+            format,
+            model,
+            output_dir,
+            dry_run,
+            json,
+        } => {
+            let fmt = parse_format(&format)?;
+            let api_calls = sizes.len() as u32;
+            let request = generate::IconRequest {
+                prompt,
+                sizes,
+                icon_type: r#type,
+                style,
+                background,
+                corners,
+                format: fmt,
+                output_dir,
+                dry_run,
+            };
+
+            if !dry_run {
+                print_cost_warning(api_calls);
+            }
+
+            let client = create_client_unless_dry_run(&model, dry_run)?;
+            let result = generate::generate_icon(client.as_ref(), &request).await?;
+            print_result(&result, json)?;
+        }
+
+        GenerateCommands::Pattern {
+            prompt,
+            r#type,
+            style,
+            density,
+            colors,
+            size,
+            format,
+            model,
+            output_dir,
+            dry_run,
+            json,
+        } => {
+            let fmt = parse_format(&format)?;
+            let request = generate::PatternRequest {
+                prompt,
+                pattern_type: r#type,
+                style,
+                density,
+                colors,
+                size,
+                format: fmt,
+                output_dir,
+                dry_run,
+            };
+
+            if !dry_run {
+                print_cost_warning(1);
+            }
+
+            let client = create_client_unless_dry_run(&model, dry_run)?;
+            let result = generate::generate_pattern(client.as_ref(), &request).await?;
+            print_result(&result, json)?;
+        }
+
+        GenerateCommands::Story {
+            prompt,
+            steps,
+            r#type,
+            style,
+            transition,
+            format,
+            model,
+            output_dir,
+            dry_run,
+            json,
+        } => {
+            let fmt = parse_format(&format)?;
+            let request = generate::StoryRequest {
+                prompt,
+                steps,
+                story_type: r#type,
+                style,
+                transition,
+                format: fmt,
+                output_dir,
+                dry_run,
+            };
+
+            if !dry_run {
+                print_cost_warning(steps as u32);
+            }
+
+            let client = create_client_unless_dry_run(&model, dry_run)?;
+            let result = generate::generate_story(client.as_ref(), &request).await?;
+            print_result(&result, json)?;
+        }
+
+        GenerateCommands::Diagram {
+            prompt,
+            r#type,
+            style,
+            layout,
+            complexity,
+            colors,
+            annotations,
+            format,
+            model,
+            output_dir,
+            dry_run,
+            json,
+        } => {
+            let fmt = parse_format(&format)?;
+            let request = generate::DiagramRequest {
+                prompt,
+                diagram_type: r#type,
+                style,
+                layout,
+                complexity,
+                colors,
+                annotations,
+                format: fmt,
+                output_dir,
+                dry_run,
+            };
+
+            if !dry_run {
+                print_cost_warning(1);
+            }
+
+            let client = create_client_unless_dry_run(&model, dry_run)?;
+            let result = generate::generate_diagram(client.as_ref(), &request).await?;
+            print_result(&result, json)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn create_client_unless_dry_run(
+    model_str: &str,
+    dry_run: bool,
+) -> Result<Option<generate::GeminiClient>> {
+    if dry_run {
+        return Ok(None);
+    }
+    let config = GeminiConfig::from_env()?;
+    let model: GeminiModel = model_str.parse().unwrap_or_default();
+    let config = config.with_model(model);
+    Ok(Some(generate::GeminiClient::new(config)))
+}
+
+fn parse_format(s: &str) -> Result<OutputFormat> {
+    s.parse()
+        .map_err(|e: String| anyhow::anyhow!(e))
+}
+
+fn print_cost_warning(api_calls: u32) {
+    eprintln!(
+        "Warning: Making {} Gemini API call(s). API usage may incur charges.",
+        api_calls
+    );
+    eprintln!("  Use --dry-run to preview prompts without calling the API.");
+}
+
+fn print_result(result: &generate::GenerateResult, json: bool) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(result)?);
+    } else {
+        println!("{}", result.message);
+
+        if !result.prompts_used.is_empty() {
+            if result.generated_files.is_empty() {
+                // Dry run: show prompts
+                println!("\nPrompts:");
+                for (i, p) in result.prompts_used.iter().enumerate() {
+                    println!("  [{}] {}", i + 1, p);
+                }
+            }
+        }
+
+        if !result.generated_files.is_empty() {
+            println!("\nGenerated files:");
+            for f in &result.generated_files {
+                println!("  {}", f.display());
+            }
+        }
+
+        if result.api_calls_made > 0 {
+            println!("\nAPI calls made: {}", result.api_calls_made);
+        }
+    }
     Ok(())
 }
 

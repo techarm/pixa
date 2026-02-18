@@ -8,6 +8,7 @@ use axum::{
 use pixa_core::{
     compress::{compress_image, CompressOptions},
     convert::convert_image,
+    generate::{self, GeminiClient, GeminiConfig},
     info::get_image_info,
     prompt::{self, Provider, PromptOptions, PromptLanguage},
     watermark::{WatermarkEngine, WatermarkSize},
@@ -21,6 +22,7 @@ use tracing::info;
 struct AppState {
     engine: WatermarkEngine,
     upload_dir: TempDir,
+    gemini_client: Option<GeminiClient>,
 }
 
 #[tokio::main]
@@ -37,7 +39,23 @@ async fn main() {
 
     info!("Upload dir: {}", upload_dir.path().display());
 
-    let state = Arc::new(AppState { engine, upload_dir });
+    // Initialize Gemini client if API key is available
+    let gemini_client = match GeminiConfig::from_env() {
+        Ok(config) => {
+            info!("Gemini API configured (model: {})", config.model);
+            Some(GeminiClient::new(config))
+        }
+        Err(_) => {
+            info!("Gemini API key not set. Generate endpoints will return errors.");
+            None
+        }
+    };
+
+    let state = Arc::new(AppState {
+        engine,
+        upload_dir,
+        gemini_client,
+    });
 
     // Resolve static file directory:
     //   1. STATIC_DIR env var (explicit override)
@@ -53,7 +71,7 @@ async fn main() {
     info!("Static files: {}", static_dir);
 
     let app = Router::new()
-        // API routes
+        // Existing API routes
         .route("/api/info", post(api_info))
         .route("/api/remove-watermark", post(api_remove_watermark))
         .route("/api/detect-watermark", post(api_detect_watermark))
@@ -62,6 +80,16 @@ async fn main() {
         .route("/api/prompt", post(api_prompt))
         .route("/api/prompt/providers", get(api_prompt_providers))
         .route("/api/health", get(api_health))
+        // Generate API routes
+        .route("/api/generate/status", get(api_generate_status))
+        .route("/api/generate/models", get(api_generate_models))
+        .route("/api/generate/image", post(api_generate_image))
+        .route("/api/generate/edit", post(api_generate_edit))
+        .route("/api/generate/restore", post(api_generate_restore))
+        .route("/api/generate/icon", post(api_generate_icon))
+        .route("/api/generate/pattern", post(api_generate_pattern))
+        .route("/api/generate/story", post(api_generate_story))
+        .route("/api/generate/diagram", post(api_generate_diagram))
         // Static files for SPA
         .fallback_service(ServeDir::new(&static_dir).append_index_html_on_directories(true))
         .layer(CorsLayer::permissive())
@@ -97,6 +125,15 @@ impl<E: Into<anyhow::Error>> From<E> for AppError {
     }
 }
 
+/// Helper: get Gemini client or return error
+fn require_gemini_client(state: &AppState) -> Result<&GeminiClient, AppError> {
+    state.gemini_client.as_ref().ok_or_else(|| {
+        AppError(anyhow::anyhow!(
+            "Gemini API key not configured. Set PIXA_GEMINI_API_KEY, GEMINI_API_KEY, or GOOGLE_API_KEY environment variable."
+        ))
+    })
+}
+
 /// Save uploaded file to temp dir, return (temp_path, original_filename)
 async fn save_upload(
     state: &Arc<AppState>,
@@ -123,6 +160,10 @@ async fn save_upload(
     }
     Err(AppError(anyhow::anyhow!("No file uploaded")))
 }
+
+// ---------------------------------------------------------------------------
+// Existing endpoints (unchanged)
+// ---------------------------------------------------------------------------
 
 async fn api_health() -> Json<serde_json::Value> {
     Json(serde_json::json!({ "status": "ok", "version": env!("CARGO_PKG_VERSION") }))
@@ -350,5 +391,256 @@ async fn api_prompt(
         let _ = tokio::fs::remove_file(&path).await;
     }
 
+    Ok(Json(serde_json::to_value(result)?))
+}
+
+// ---------------------------------------------------------------------------
+// Generate API endpoints
+// ---------------------------------------------------------------------------
+
+async fn api_generate_status(
+    state: axum::extract::State<Arc<AppState>>,
+) -> Json<serde_json::Value> {
+    let configured = state.gemini_client.is_some();
+    Json(serde_json::json!({
+        "configured": configured,
+        "message": if configured {
+            "Gemini API is configured and ready"
+        } else {
+            "Gemini API key not set. Set PIXA_GEMINI_API_KEY, GEMINI_API_KEY, or GOOGLE_API_KEY."
+        }
+    }))
+}
+
+async fn api_generate_models() -> Json<serde_json::Value> {
+    Json(serde_json::json!({
+        "models": [
+            { "id": "flash", "name": "gemini-2.5-flash-image", "description": "Fast image generation (default)" },
+            { "id": "pro", "name": "gemini-3-pro-image-preview", "description": "Higher quality image generation" }
+        ]
+    }))
+}
+
+#[derive(Deserialize)]
+struct GenerateImageParams {
+    prompt: String,
+    count: Option<u8>,
+    styles: Option<String>,
+    variations: Option<String>,
+    format: Option<String>,
+    dry_run: Option<bool>,
+}
+
+async fn api_generate_image(
+    state: axum::extract::State<Arc<AppState>>,
+    Json(params): Json<GenerateImageParams>,
+) -> AppResult<Json<serde_json::Value>> {
+    let client = require_gemini_client(&state)?;
+
+    let request = generate::ImageRequest {
+        prompt: params.prompt,
+        count: params.count.unwrap_or(1),
+        styles: params.styles.map(|s| s.split(',').map(|v| v.trim().to_string()).collect()).unwrap_or_default(),
+        variations: params.variations.map(|s| s.split(',').map(|v| v.trim().to_string()).collect()).unwrap_or_default(),
+        format: params.format.and_then(|f| f.parse().ok()).unwrap_or_default(),
+        output_dir: Some(state.upload_dir.path().to_path_buf()),
+        dry_run: params.dry_run.unwrap_or(false),
+    };
+
+    let result = generate::generate_image(Some(client), &request).await?;
+    Ok(Json(serde_json::to_value(result)?))
+}
+
+#[derive(Deserialize)]
+struct GenerateEditParams {
+    prompt: Option<String>,
+    format: Option<String>,
+    dry_run: Option<bool>,
+}
+
+async fn api_generate_edit(
+    state: axum::extract::State<Arc<AppState>>,
+    Query(params): Query<GenerateEditParams>,
+    multipart: Multipart,
+) -> AppResult<Json<serde_json::Value>> {
+    let client = require_gemini_client(&state)?;
+    let (path, _) = save_upload(&state, multipart).await?;
+
+    let prompt = params.prompt.unwrap_or_else(|| "edit this image".to_string());
+
+    let request = generate::EditRequest {
+        input: path.clone(),
+        prompt,
+        format: params.format.and_then(|f| f.parse().ok()).unwrap_or_default(),
+        output_dir: Some(state.upload_dir.path().to_path_buf()),
+        dry_run: params.dry_run.unwrap_or(false),
+    };
+
+    let result = generate::edit_image(Some(client), &request).await?;
+    let _ = tokio::fs::remove_file(&path).await;
+    Ok(Json(serde_json::to_value(result)?))
+}
+
+async fn api_generate_restore(
+    state: axum::extract::State<Arc<AppState>>,
+    Query(params): Query<GenerateEditParams>,
+    multipart: Multipart,
+) -> AppResult<Json<serde_json::Value>> {
+    let client = require_gemini_client(&state)?;
+    let (path, _) = save_upload(&state, multipart).await?;
+
+    let prompt = params.prompt.unwrap_or_else(|| "restore and enhance this image".to_string());
+
+    let request = generate::RestoreRequest {
+        input: path.clone(),
+        prompt,
+        format: params.format.and_then(|f| f.parse().ok()).unwrap_or_default(),
+        output_dir: Some(state.upload_dir.path().to_path_buf()),
+        dry_run: params.dry_run.unwrap_or(false),
+    };
+
+    let result = generate::restore_image(Some(client), &request).await?;
+    let _ = tokio::fs::remove_file(&path).await;
+    Ok(Json(serde_json::to_value(result)?))
+}
+
+#[derive(Deserialize)]
+struct GenerateIconParams {
+    prompt: String,
+    sizes: Option<String>,
+    r#type: Option<String>,
+    style: Option<String>,
+    background: Option<String>,
+    corners: Option<String>,
+    format: Option<String>,
+    dry_run: Option<bool>,
+}
+
+async fn api_generate_icon(
+    state: axum::extract::State<Arc<AppState>>,
+    Json(params): Json<GenerateIconParams>,
+) -> AppResult<Json<serde_json::Value>> {
+    let client = require_gemini_client(&state)?;
+
+    let sizes = params
+        .sizes
+        .map(|s| s.split(',').filter_map(|v| v.trim().parse().ok()).collect())
+        .unwrap_or_else(|| vec![256]);
+
+    let request = generate::IconRequest {
+        prompt: params.prompt,
+        sizes,
+        icon_type: params.r#type.unwrap_or_else(|| "app-icon".into()),
+        style: params.style.unwrap_or_else(|| "modern".into()),
+        background: params.background.unwrap_or_else(|| "transparent".into()),
+        corners: params.corners.unwrap_or_else(|| "rounded".into()),
+        format: params.format.and_then(|f| f.parse().ok()).unwrap_or_default(),
+        output_dir: Some(state.upload_dir.path().to_path_buf()),
+        dry_run: params.dry_run.unwrap_or(false),
+    };
+
+    let result = generate::generate_icon(Some(client), &request).await?;
+    Ok(Json(serde_json::to_value(result)?))
+}
+
+#[derive(Deserialize)]
+struct GeneratePatternParams {
+    prompt: String,
+    r#type: Option<String>,
+    style: Option<String>,
+    density: Option<String>,
+    colors: Option<String>,
+    size: Option<String>,
+    format: Option<String>,
+    dry_run: Option<bool>,
+}
+
+async fn api_generate_pattern(
+    state: axum::extract::State<Arc<AppState>>,
+    Json(params): Json<GeneratePatternParams>,
+) -> AppResult<Json<serde_json::Value>> {
+    let client = require_gemini_client(&state)?;
+
+    let request = generate::PatternRequest {
+        prompt: params.prompt,
+        pattern_type: params.r#type.unwrap_or_else(|| "seamless".into()),
+        style: params.style.unwrap_or_else(|| "abstract".into()),
+        density: params.density.unwrap_or_else(|| "medium".into()),
+        colors: params.colors.unwrap_or_else(|| "colorful".into()),
+        size: params.size.unwrap_or_else(|| "256x256".into()),
+        format: params.format.and_then(|f| f.parse().ok()).unwrap_or_default(),
+        output_dir: Some(state.upload_dir.path().to_path_buf()),
+        dry_run: params.dry_run.unwrap_or(false),
+    };
+
+    let result = generate::generate_pattern(Some(client), &request).await?;
+    Ok(Json(serde_json::to_value(result)?))
+}
+
+#[derive(Deserialize)]
+struct GenerateStoryParams {
+    prompt: String,
+    steps: Option<u8>,
+    r#type: Option<String>,
+    style: Option<String>,
+    transition: Option<String>,
+    format: Option<String>,
+    dry_run: Option<bool>,
+}
+
+async fn api_generate_story(
+    state: axum::extract::State<Arc<AppState>>,
+    Json(params): Json<GenerateStoryParams>,
+) -> AppResult<Json<serde_json::Value>> {
+    let client = require_gemini_client(&state)?;
+
+    let request = generate::StoryRequest {
+        prompt: params.prompt,
+        steps: params.steps.unwrap_or(4),
+        story_type: params.r#type.unwrap_or_else(|| "story".into()),
+        style: params.style.unwrap_or_else(|| "consistent".into()),
+        transition: params.transition.unwrap_or_else(|| "smooth".into()),
+        format: params.format.and_then(|f| f.parse().ok()).unwrap_or_default(),
+        output_dir: Some(state.upload_dir.path().to_path_buf()),
+        dry_run: params.dry_run.unwrap_or(false),
+    };
+
+    let result = generate::generate_story(Some(client), &request).await?;
+    Ok(Json(serde_json::to_value(result)?))
+}
+
+#[derive(Deserialize)]
+struct GenerateDiagramParams {
+    prompt: String,
+    r#type: Option<String>,
+    style: Option<String>,
+    layout: Option<String>,
+    complexity: Option<String>,
+    colors: Option<String>,
+    annotations: Option<String>,
+    format: Option<String>,
+    dry_run: Option<bool>,
+}
+
+async fn api_generate_diagram(
+    state: axum::extract::State<Arc<AppState>>,
+    Json(params): Json<GenerateDiagramParams>,
+) -> AppResult<Json<serde_json::Value>> {
+    let client = require_gemini_client(&state)?;
+
+    let request = generate::DiagramRequest {
+        prompt: params.prompt,
+        diagram_type: params.r#type.unwrap_or_else(|| "flowchart".into()),
+        style: params.style.unwrap_or_else(|| "professional".into()),
+        layout: params.layout.unwrap_or_else(|| "hierarchical".into()),
+        complexity: params.complexity.unwrap_or_else(|| "detailed".into()),
+        colors: params.colors.unwrap_or_else(|| "accent".into()),
+        annotations: params.annotations.unwrap_or_else(|| "detailed".into()),
+        format: params.format.and_then(|f| f.parse().ok()).unwrap_or_default(),
+        output_dir: Some(state.upload_dir.path().to_path_buf()),
+        dry_run: params.dry_run.unwrap_or(false),
+    };
+
+    let result = generate::generate_diagram(Some(client), &request).await?;
     Ok(Json(serde_json::to_value(result)?))
 }

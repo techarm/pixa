@@ -1,0 +1,22 @@
+# Story/sequence generation prompt configuration
+# Matches nanobanana generateStorySequence() - imageGenerator.ts:402-542
+
+[defaults]
+steps = 4
+type = "story"
+style = "consistent"
+transition = "smooth"
+format = "png"
+
+[prompt]
+base = "{prompt}, step {step} of {total_steps}"
+
+[type_context]
+story = ", narrative sequence, {style} art style"
+process = ", procedural step, instructional illustration"
+tutorial = ", tutorial step, educational diagram"
+timeline = ", chronological progression, timeline visualization"
+
+[transitions]
+# Added only when step > 1
+template = ", {transition} transition from previous step"
