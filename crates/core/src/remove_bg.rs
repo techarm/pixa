@@ -101,12 +101,16 @@ pub async fn remove_background(
 /// Designed for AI-generated logos where the prompt requests a green background.
 /// Uses HSV color space to detect green pixels and set them transparent,
 /// with smooth alpha gradients at edges for anti-aliasing.
+/// After removal, auto-trims transparent borders so the logo fills the image.
 pub fn remove_green_background_file(
     input: &Path,
     output: &Path,
 ) -> Result<RemoveBgResult, RemoveBgError> {
     let img = image::open(input)?;
-    let result_img = remove_green_background(&img);
+    let bg_removed = remove_green_background(&img);
+
+    // Auto-trim transparent borders so logo fills the file
+    let result_img = trim_transparent_borders(&bg_removed, 4);
 
     let (w, h) = result_img.dimensions();
     let total_pixels = (w as u64) * (h as u64);
@@ -120,9 +124,10 @@ pub fn remove_green_background_file(
 
     result_img.save(output)?;
 
+    let (orig_w, orig_h) = img.dimensions();
     info!(
-        "Green background removed: {:.1}% pixels transparentized",
-        removal_percent
+        "Green background removed and trimmed: {}x{} -> {}x{} ({:.1}% transparent)",
+        orig_w, orig_h, w, h, removal_percent
     );
 
     Ok(RemoveBgResult {
@@ -131,6 +136,49 @@ pub fn remove_green_background_file(
         total_pixels,
         removal_percent,
     })
+}
+
+/// Trim transparent borders from an image, cropping to the bounding box of
+/// non-transparent content plus optional padding.
+///
+/// This ensures the logo fills the entire file (no wasted transparent space).
+pub fn trim_transparent_borders(img: &DynamicImage, padding: u32) -> DynamicImage {
+    let (w, h) = img.dimensions();
+    if w == 0 || h == 0 {
+        return img.clone();
+    }
+
+    let rgba = img.to_rgba8();
+
+    // Find bounding box of non-transparent pixels
+    let mut min_x = w;
+    let mut min_y = h;
+    let mut max_x = 0u32;
+    let mut max_y = 0u32;
+
+    for y in 0..h {
+        for x in 0..w {
+            if rgba.get_pixel(x, y)[3] > 0 {
+                min_x = min_x.min(x);
+                min_y = min_y.min(y);
+                max_x = max_x.max(x);
+                max_y = max_y.max(y);
+            }
+        }
+    }
+
+    // All pixels are transparent — return as-is
+    if min_x > max_x || min_y > max_y {
+        return img.clone();
+    }
+
+    // Apply padding (clamped to image bounds)
+    let crop_x = min_x.saturating_sub(padding);
+    let crop_y = min_y.saturating_sub(padding);
+    let crop_w = (max_x + 1 + padding).min(w) - crop_x;
+    let crop_h = (max_y + 1 + padding).min(h) - crop_y;
+
+    img.crop_imm(crop_x, crop_y, crop_w, crop_h)
 }
 
 /// Remove green (chromakey) background from a DynamicImage in memory.
@@ -349,37 +397,43 @@ fn rgb_to_hsv(r: u8, g: u8, b: u8) -> (f64, f64, f64) {
 
 /// Compute alpha value for a pixel based on its greenness.
 ///
-/// Returns 0 for pure green background pixels, 255 for non-green pixels,
+/// Returns 0 for pure chromakey green (#00FF00) pixels, 255 for non-green pixels,
 /// and intermediate values for edge pixels (anti-aliasing).
+///
+/// Tuned for high-saturation chromakey green (S≈1.0, V≈1.0).
+/// Logo colors with lower saturation are preserved.
 fn compute_green_alpha(r: u8, g: u8, b: u8) -> u8 {
     let (h, s, v) = rgb_to_hsv(r, g, b);
 
     // Outside extended green range: fully opaque
-    if h < 70.0 || h > 170.0 || s < 0.2 || v < 0.15 {
+    // Tighter than before to avoid removing logo's dark green/teal colors
+    if h < 80.0 || h > 160.0 || s < 0.4 || v < 0.25 {
         return 255;
     }
 
     // Hue score: 1.0 at center of green (H=120), falls to 0.0 at edges
-    let h_score = if (90.0..=150.0).contains(&h) {
+    let h_score = if (95.0..=145.0).contains(&h) {
         1.0
-    } else if h < 90.0 {
-        (h - 70.0) / 20.0
+    } else if h < 95.0 {
+        (h - 80.0) / 15.0
     } else {
-        (170.0 - h) / 20.0
+        (160.0 - h) / 15.0
     };
 
-    // Saturation score: 0.0 below 0.2, ramps to 1.0 at 0.5
-    let s_score = if s >= 0.5 {
+    // Saturation score: requires high saturation (chromakey is S=1.0)
+    // 0.0 below 0.4, ramps to 1.0 at 0.7
+    let s_score = if s >= 0.7 {
         1.0
     } else {
-        (s - 0.2) / 0.3
+        (s - 0.4) / 0.3
     };
 
-    // Value score: 0.0 below 0.15, ramps to 1.0 at 0.4
-    let v_score = if v >= 0.4 {
+    // Value score: requires decent brightness (chromakey is V=1.0)
+    // 0.0 below 0.25, ramps to 1.0 at 0.5
+    let v_score = if v >= 0.5 {
         1.0
     } else {
-        (v - 0.15) / 0.25
+        (v - 0.25) / 0.25
     };
 
     let greenness = (h_score * s_score * v_score).clamp(0.0, 1.0);
@@ -578,18 +632,91 @@ mod tests {
     }
 
     #[test]
-    fn test_green_alpha_dark_green() {
-        // Dark green (#006400) — still green but darker
+    fn test_green_alpha_dark_green_low_saturation() {
+        // Dark green (#006400) — S=1.0 but V=0.39 (low brightness)
+        // With tighter thresholds, this should still be partially transparent
+        // as it has high saturation
         let alpha = compute_green_alpha(0, 100, 0);
-        assert!(alpha < 128, "dark green should be mostly transparent, got {alpha}");
+        assert!(alpha < 200, "dark saturated green should have reduced alpha, got {alpha}");
+    }
+
+    #[test]
+    fn test_green_alpha_logo_dark_green() {
+        // A typical logo dark green (#2D5A27) — low saturation, should be PRESERVED
+        // H≈110, S≈0.57, V≈0.35
+        let alpha = compute_green_alpha(45, 90, 39);
+        assert!(alpha > 128, "logo dark green should be mostly opaque, got {alpha}");
+    }
+
+    #[test]
+    fn test_green_alpha_teal() {
+        // Teal (#008080) — H=180, outside green hue range, should be preserved
+        let alpha = compute_green_alpha(0, 128, 128);
+        assert_eq!(alpha, 255, "teal should be fully opaque");
     }
 
     #[test]
     fn test_green_alpha_yellow_green() {
-        // Yellow-green (#ADFF2F) — on the edge of green range
+        // Yellow-green (#ADFF2F) — H≈84, on the edge of green range
         let alpha = compute_green_alpha(173, 255, 47);
-        // Should be partially transparent (it's greenish)
-        assert!(alpha < 200, "yellow-green should have reduced alpha, got {alpha}");
+        // Should be partially transparent (it's greenish with high saturation)
+        assert!(alpha < 255, "yellow-green should have reduced alpha, got {alpha}");
+    }
+
+    // --- Trim tests ---
+
+    #[test]
+    fn test_trim_transparent_borders_basic() {
+        // 100x100 image with a 20x20 red square at center (40-59, 40-59)
+        let mut img = RgbaImage::from_pixel(100, 100, Rgba([0, 0, 0, 0]));
+        for y in 40..60 {
+            for x in 40..60 {
+                img.put_pixel(x, y, Rgba([255, 0, 0, 255]));
+            }
+        }
+        let dyn_img = DynamicImage::ImageRgba8(img);
+        let trimmed = trim_transparent_borders(&dyn_img, 0);
+        let (w, h) = trimmed.dimensions();
+        assert_eq!(w, 20, "trimmed width should be 20, got {w}");
+        assert_eq!(h, 20, "trimmed height should be 20, got {h}");
+    }
+
+    #[test]
+    fn test_trim_transparent_borders_with_padding() {
+        let mut img = RgbaImage::from_pixel(100, 100, Rgba([0, 0, 0, 0]));
+        for y in 40..60 {
+            for x in 40..60 {
+                img.put_pixel(x, y, Rgba([255, 0, 0, 255]));
+            }
+        }
+        let dyn_img = DynamicImage::ImageRgba8(img);
+        let trimmed = trim_transparent_borders(&dyn_img, 5);
+        let (w, h) = trimmed.dimensions();
+        // 20px content + 5px padding each side = 30
+        assert_eq!(w, 30, "trimmed width with padding should be 30, got {w}");
+        assert_eq!(h, 30, "trimmed height with padding should be 30, got {h}");
+    }
+
+    #[test]
+    fn test_trim_transparent_borders_all_transparent() {
+        let img = DynamicImage::ImageRgba8(RgbaImage::from_pixel(50, 50, Rgba([0, 0, 0, 0])));
+        let trimmed = trim_transparent_borders(&img, 0);
+        // Should return the same image (all transparent)
+        assert_eq!(trimmed.dimensions(), (50, 50));
+    }
+
+    #[test]
+    fn test_trim_transparent_borders_no_transparent() {
+        let img = DynamicImage::ImageRgba8(RgbaImage::from_pixel(50, 50, Rgba([255, 0, 0, 255])));
+        let trimmed = trim_transparent_borders(&img, 0);
+        assert_eq!(trimmed.dimensions(), (50, 50));
+    }
+
+    #[test]
+    fn test_trim_transparent_borders_empty() {
+        let img = DynamicImage::ImageRgba8(RgbaImage::new(0, 0));
+        let trimmed = trim_transparent_borders(&img, 0);
+        assert_eq!(trimmed.dimensions(), (0, 0));
     }
 
     // --- Chromakey removal tests ---

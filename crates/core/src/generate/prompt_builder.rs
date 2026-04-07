@@ -174,7 +174,7 @@ pub fn build_story_step_prompt(request: &StoryRequest, step: u8, total_steps: u8
 /// then removed in post-processing using HSV color space detection.
 pub fn build_logo_prompt(request: &LogoRequest) -> String {
     format!(
-        "{}, logo design, icon only, no text, no words, no letters, {} style, solid bright green (#00FF00) chroma key background, thin white outline around the logo, clean professional design, centered composition, high contrast",
+        "{}, logo design, icon only, no text, no words, no letters, {} style, solid bright green (#00FF00) chroma key background, thin white outline around the logo, logo fills most of the canvas with minimal margins, large prominent design, clean professional, high contrast, 2-3 colors maximum, simple shapes",
         request.prompt, request.style
     )
 }
@@ -433,6 +433,9 @@ mod tests {
         assert!(prompt.contains("green"));
         assert!(prompt.contains("chroma key"));
         assert!(prompt.contains("white outline"));
+        assert!(prompt.contains("fills most of the canvas"));
+        assert!(prompt.contains("large prominent"));
+        assert!(prompt.contains("simple shapes"));
     }
 
     #[test]

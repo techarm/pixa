@@ -16,8 +16,8 @@ pub use prompt::{
     detect_available_providers, generate_prompt, PromptOptions, PromptResult, Provider,
 };
 pub use remove_bg::{
-    remove_background, remove_green_background, remove_green_background_file, RemoveBgOptions,
-    RemoveBgResult,
+    remove_background, remove_green_background, remove_green_background_file,
+    trim_transparent_borders, RemoveBgOptions, RemoveBgResult,
 };
 pub use watermark::{DetectionResult, WatermarkEngine, WatermarkSize};
 
