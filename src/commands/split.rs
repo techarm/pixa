@@ -84,31 +84,41 @@ pub fn run(args: SplitArgs) -> Result<()> {
         args.names.clone()
     };
 
+    // All outputs are uniformly sized to the largest detected bbox by
+    // padding the smaller crops with the background color (so we never
+    // accidentally include neighboring characters).
+    let (max_w, max_h) = split::max_dimensions(&result.objects);
+
     let name_width = names.iter().map(|s| s.chars().count()).max().unwrap_or(1);
     let median_w = median_width(&result.objects);
     for (name, obj) in names.iter().zip(result.objects.iter()) {
         let pad = " ".repeat(name_width - name.chars().count());
         let coord = format!("({:>4}, {:>4})", obj.x, obj.y);
-        let size = format!("{:>4}×{:<4}", obj.w, obj.h);
+        let detected = format!("{}×{}", obj.w, obj.h);
         let marker = if obj.w as f64 > median_w * 1.15 {
-            dim("← wider")
+            dim("(wider)")
         } else if (obj.w as f64) < median_w * 0.85 {
-            dim("← narrower")
+            dim("(narrower)")
         } else {
             String::new()
         };
-        println!("  {bold}{pad}  {coord}  {size}  {marker}", bold = bold(name));
+        println!(
+            "  {bold}{pad}  {coord}  detected {:>9}  {}",
+            dim(&detected),
+            marker,
+            bold = bold(name),
+        );
     }
+    println!(
+        "\n{} all outputs padded to {}",
+        dim("output size:"),
+        bold(&format!("{max_w}×{max_h}"))
+    );
     println!();
 
     // Save crops
     std::fs::create_dir_all(&args.output)
         .with_context(|| format!("Failed to create output dir: {}", args.output.display()))?;
-
-    // All outputs are uniformly sized to the largest detected bbox by
-    // padding the smaller crops with the background color (so we never
-    // accidentally include neighboring characters).
-    let (max_w, max_h) = split::max_dimensions(&result.objects);
 
     let mut total_size = 0u64;
     let mut saved_paths = Vec::new();
