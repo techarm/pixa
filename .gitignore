@@ -17,6 +17,9 @@
 .DS_Store
 Thumbs.db
 
-# Docker persistent data
-/data/
-pixa-output
+# Local-only test fixtures (real images used during development;
+# kept out of version control because they are large / not ours)
+/test-images/
+
+# Preview / debug outputs from `pixa split --preview`
+*-preview.png
