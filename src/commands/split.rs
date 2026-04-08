@@ -105,10 +105,15 @@ pub fn run(args: SplitArgs) -> Result<()> {
     std::fs::create_dir_all(&args.output)
         .with_context(|| format!("Failed to create output dir: {}", args.output.display()))?;
 
+    // All outputs are uniformly sized to the largest detected bbox by
+    // padding the smaller crops with the background color (so we never
+    // accidentally include neighboring characters).
+    let (max_w, max_h) = split::max_dimensions(&result.objects);
+
     let mut total_size = 0u64;
     let mut saved_paths = Vec::new();
     for (name, obj) in names.iter().zip(result.objects.iter()) {
-        let cropped = split::crop(&img, obj);
+        let cropped = split::crop_padded(&img, obj, max_w, max_h, result.background);
         let path = args.output.join(format!("{name}.png"));
         ensure_parent(&path)?;
         cropped

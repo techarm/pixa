@@ -33,7 +33,7 @@ pub enum SplitError {
     NoObjects,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct SplitOptions {
     /// Pixels of background padding to add around each detected object,
     /// in addition to the automatic erosion-compensation margin.
@@ -41,20 +41,6 @@ pub struct SplitOptions {
     /// If `Some(n)`, the algorithm will try to reconcile its detection
     /// to exactly `n` objects (by re-splitting the widest blob).
     pub expected_count: Option<usize>,
-    /// If `true`, expand every detected object to a uniform size
-    /// (the max width and max height across all detections), centered
-    /// on the original bounding box. Clamped to image bounds.
-    pub uniform_size: bool,
-}
-
-impl Default for SplitOptions {
-    fn default() -> Self {
-        Self {
-            padding: 0,
-            expected_count: None,
-            uniform_size: true,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -160,16 +146,6 @@ pub fn detect_objects(
         return Err(SplitError::NoObjects);
     }
 
-    // Optionally make every output the same size by centering each
-    // bbox in a max_w × max_h rectangle (clamped to image bounds).
-    if opts.uniform_size {
-        let max_w = objects.iter().map(|o| o.w).max().unwrap();
-        let max_h = objects.iter().map(|o| o.h).max().unwrap();
-        for obj in &mut objects {
-            *obj = expand_centered(*obj, max_w, max_h, w, h);
-        }
-    }
-
     Ok(SplitResult {
         background: [bg[0], bg[1], bg[2]],
         objects,
@@ -182,25 +158,39 @@ pub fn crop(img: &DynamicImage, obj: &DetectedObject) -> DynamicImage {
     img.crop_imm(obj.x, obj.y, obj.w, obj.h)
 }
 
-/// Center `obj` inside a `target_w × target_h` rectangle, clamped to
-/// `[0, image_w) × [0, image_h)`. If the target dimensions are larger
-/// than the image, they're capped to the image bounds.
-fn expand_centered(
-    obj: DetectedObject,
+/// Crop `obj` from `img` and place it on a fresh `target_w × target_h`
+/// canvas filled with `background`, with the cropped content centered.
+///
+/// This is the safe way to produce uniform-sized outputs from a sheet
+/// where neighbors are close together — unlike expanding the bbox into
+/// the source image (which would include neighbor pixels), this only
+/// reads from inside the original bbox and pads with the background
+/// color.
+pub fn crop_padded(
+    img: &DynamicImage,
+    obj: &DetectedObject,
     target_w: u32,
     target_h: u32,
-    image_w: u32,
-    image_h: u32,
-) -> DetectedObject {
-    let tw = target_w.min(image_w);
-    let th = target_h.min(image_h);
-    let cx = obj.x + obj.w / 2;
-    let cy = obj.y + obj.h / 2;
-    let half_w = tw / 2;
-    let half_h = th / 2;
-    let x = cx.saturating_sub(half_w).min(image_w - tw);
-    let y = cy.saturating_sub(half_h).min(image_h - th);
-    DetectedObject { x, y, w: tw, h: th }
+    background: [u8; 3],
+) -> DynamicImage {
+    use image::{Rgba, RgbaImage};
+
+    let cropped = img.crop_imm(obj.x, obj.y, obj.w, obj.h).to_rgba8();
+    let tw = target_w.max(obj.w);
+    let th = target_h.max(obj.h);
+    let bg = Rgba([background[0], background[1], background[2], 255]);
+    let mut canvas = RgbaImage::from_pixel(tw, th, bg);
+    let off_x = (tw - obj.w) / 2;
+    let off_y = (th - obj.h) / 2;
+    image::imageops::overlay(&mut canvas, &cropped, off_x as i64, off_y as i64);
+    DynamicImage::ImageRgba8(canvas)
+}
+
+/// Compute the maximum width and height across a slice of detected objects.
+pub fn max_dimensions(objects: &[DetectedObject]) -> (u32, u32) {
+    let max_w = objects.iter().map(|o| o.w).max().unwrap_or(0);
+    let max_h = objects.iter().map(|o| o.h).max().unwrap_or(0);
+    (max_w, max_h)
 }
 
 // ---------- background / mask ----------
