@@ -33,13 +33,28 @@ pub enum SplitError {
     NoObjects,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct SplitOptions {
-    /// Pixels of background padding to add around each detected object.
+    /// Pixels of background padding to add around each detected object,
+    /// in addition to the automatic erosion-compensation margin.
     pub padding: u32,
     /// If `Some(n)`, the algorithm will try to reconcile its detection
     /// to exactly `n` objects (by re-splitting the widest blob).
     pub expected_count: Option<usize>,
+    /// If `true`, expand every detected object to a uniform size
+    /// (the max width and max height across all detections), centered
+    /// on the original bounding box. Clamped to image bounds.
+    pub uniform_size: bool,
+}
+
+impl Default for SplitOptions {
+    fn default() -> Self {
+        Self {
+            padding: 0,
+            expected_count: None,
+            uniform_size: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -64,6 +79,13 @@ const FG_DISTANCE_THRESHOLD: f64 = 30.0;
 const GAP_FG_RATIO: f64 = 0.01;
 const MIN_GAP_RATIO: f64 = 0.01;
 const CORNER_PATCH: u32 = 20;
+/// Pixels added to each bbox edge to compensate for the 1-px erosion
+/// applied during mask building.
+const EROSION_COMPENSATE: u32 = 3;
+/// Visual breathing margin added to each bbox, as a fraction of the
+/// bbox's smaller dimension. Makes crops feel less tight without
+/// looking like they have a huge frame.
+const VISUAL_MARGIN_RATIO: f64 = 0.04;
 
 /// Detect objects in `img` according to `opts`.
 pub fn detect_objects(
@@ -109,14 +131,22 @@ pub fn detect_objects(
         }
     }
 
-    // Compute per-blob y-extent via row projection (largest vertical run).
+    // Compute per-blob y-extent via row projection (largest vertical run),
+    // then expand each bbox by:
+    //   - EROSION_COMPENSATE (constant, fixes mask shrinkage)
+    //   - VISUAL_MARGIN_RATIO * min(bw, bh) (proportional breathing room)
+    //   - opts.padding (user-requested extra)
     let mut objects = Vec::with_capacity(blobs.len());
     for (x0, x1) in &blobs {
         if let Some((y0, y1)) = row_extent(&mask, w, h, *x0, *x1) {
-            let bx = x0.saturating_sub(opts.padding);
-            let by = y0.saturating_sub(opts.padding);
-            let bw = (*x1 + 1 + opts.padding).min(w) - bx;
-            let bh = (y1 + 1 + opts.padding).min(h) - by;
+            let raw_w = x1 - x0 + 1;
+            let raw_h = y1 - y0 + 1;
+            let visual = ((raw_w.min(raw_h) as f64) * VISUAL_MARGIN_RATIO).round() as u32;
+            let margin = EROSION_COMPENSATE + visual + opts.padding;
+            let bx = x0.saturating_sub(margin);
+            let by = y0.saturating_sub(margin);
+            let bw = (*x1 + 1 + margin).min(w) - bx;
+            let bh = (y1 + 1 + margin).min(h) - by;
             objects.push(DetectedObject {
                 x: bx,
                 y: by,
@@ -130,6 +160,16 @@ pub fn detect_objects(
         return Err(SplitError::NoObjects);
     }
 
+    // Optionally make every output the same size by centering each
+    // bbox in a max_w × max_h rectangle (clamped to image bounds).
+    if opts.uniform_size {
+        let max_w = objects.iter().map(|o| o.w).max().unwrap();
+        let max_h = objects.iter().map(|o| o.h).max().unwrap();
+        for obj in &mut objects {
+            *obj = expand_centered(*obj, max_w, max_h, w, h);
+        }
+    }
+
     Ok(SplitResult {
         background: [bg[0], bg[1], bg[2]],
         objects,
@@ -140,6 +180,27 @@ pub fn detect_objects(
 /// Crop a single detected object out of the source image.
 pub fn crop(img: &DynamicImage, obj: &DetectedObject) -> DynamicImage {
     img.crop_imm(obj.x, obj.y, obj.w, obj.h)
+}
+
+/// Center `obj` inside a `target_w × target_h` rectangle, clamped to
+/// `[0, image_w) × [0, image_h)`. If the target dimensions are larger
+/// than the image, they're capped to the image bounds.
+fn expand_centered(
+    obj: DetectedObject,
+    target_w: u32,
+    target_h: u32,
+    image_w: u32,
+    image_h: u32,
+) -> DetectedObject {
+    let tw = target_w.min(image_w);
+    let th = target_h.min(image_h);
+    let cx = obj.x + obj.w / 2;
+    let cy = obj.y + obj.h / 2;
+    let half_w = tw / 2;
+    let half_h = th / 2;
+    let x = cx.saturating_sub(half_w).min(image_w - tw);
+    let y = cy.saturating_sub(half_h).min(image_h - th);
+    DetectedObject { x, y, w: tw, h: th }
 }
 
 // ---------- background / mask ----------

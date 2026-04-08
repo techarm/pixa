@@ -36,6 +36,7 @@ pub fn run(args: SplitArgs) -> Result<()> {
         } else {
             Some(args.names.len())
         },
+        ..Default::default()
     };
 
     let result = match split::detect_objects(&img, &opts) {
