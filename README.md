@@ -1,95 +1,125 @@
 # pixa 🖼️
 
-Rust 製の高速画像処理 CLI ツールキット。AI 生成画像を Web 配信向けに最適化したり、シート画像を分割したり、Gemini の透かしを除去したりするための実用ツール集。
+[English](README.md) | [日本語](README.ja.md)
 
-## 機能
+A fast Rust image processing CLI — optimize AI-generated images for the
+web in one command, split sprite/expression sheets into individual
+avatars, generate favicon sets from a logo, remove Gemini AI
+watermarks, and more.
 
-| コマンド             | 説明                                                       |
-| -------------------- | ---------------------------------------------------------- |
-| `compress`           | MozJPEG / OxiPNG / WebP で圧縮、リサイズ、フォーマット変換 |
-| `convert`            | JPEG ↔ PNG ↔ WebP ↔ BMP ↔ GIF ↔ TIFF                       |
-| `info`               | 寸法・カラー・EXIF・SHA-256 等を表示                       |
-| `favicon`            | 画像から Web 用アイコンセット (ICO + 各サイズ PNG) を生成  |
-| `split`              | シート画像から各オブジェクトを自動検出して切り出し         |
-| `remove-watermark`   | Gemini AI の透かしを Reverse Alpha Blending で数学的に除去 |
-| `detect`             | Gemini 透かしの有無をスコア付きで判定                      |
+## Features
 
-`compress`, `convert`, `remove-watermark` はファイルとディレクトリの両方を受け付けます。ディレクトリを処理する場合は `-r/--recursive` を付けてください。
+| Command            | Description                                                          |
+| ------------------ | -------------------------------------------------------------------- |
+| `compress`         | Compress, resize, and convert formats (MozJPEG / OxiPNG / WebP)      |
+| `convert`          | Convert between JPEG ↔ PNG ↔ WebP ↔ BMP ↔ GIF ↔ TIFF                 |
+| `info`             | Show dimensions, color, EXIF, SHA-256, and other metadata            |
+| `favicon`          | Generate a web-ready icon set (ICO + PNGs) from any image            |
+| `split`            | Auto-detect and crop individual objects from a sheet image           |
+| `remove-watermark` | Remove the Gemini AI watermark via Reverse Alpha Blending            |
+| `detect`           | Score whether a Gemini watermark is present in an image              |
+| `install`          | Install the Claude Code skill so coding agents can use pixa          |
 
-> Watermark 削除アルゴリズムは [GeminiWatermarkTool](https://github.com/allenk/GeminiWatermarkTool) by Allen Kuo (MIT License) を参考にしています。
+`compress`, `convert`, and `remove-watermark` accept either a file or a
+directory — pass `-r/--recursive` to walk into subdirectories.
 
-## AI コーディングエージェントから使う
+> The watermark removal algorithm is adapted from
+> [GeminiWatermarkTool](https://github.com/allenk/GeminiWatermarkTool)
+> by Allen Kuo (MIT License).
 
-Claude Code・GitHub Copilot などのコーディングエージェントから自動で
-pixa を呼び出せるようにするには、Skill ファイルをインストールします:
+## Use from AI coding agents
+
+Claude Code, GitHub Copilot, and other coding agents can call pixa
+automatically once you install the Skill file:
 
 ```bash
 pixa install --skills
 ```
 
-これで `~/.claude/skills/pixa/SKILL.md` が配置され、エージェントが
-「画像を Web 用に最適化して」「アバターをシートから切り出して」など
-のリクエストを受けたときに自動で pixa を使うようになります。
+This drops a Skill at `~/.claude/skills/pixa/SKILL.md` so the agent
+knows when and how to use pixa for image-related requests. Re-run with
+`--force` to update.
 
-更新時は `pixa install --skills --force` で上書きできます。
+## Quick start
 
-## クイックスタート
-
-### AI 画像を Web 用に最適化（一発）
+### Web-optimize an AI-generated image (one command)
 
 ```bash
-# 4K PNG → 1920px WebP（リサイズ + 変換 + 圧縮）
+# 4K PNG → 1920px WebP (resize + format convert + compress)
 pixa compress hero-4k.png -o hero.webp --max 1920
 # 6.8 MB → 82.7 KB (-98.8%)
 ```
 
-### 圧縮
+`--max` is the longest edge in pixels. Aspect ratio is preserved, and
+the same flag works for both landscape and portrait inputs.
+
+### Compress
 
 ```bash
 pixa compress photo.jpg                          # → photo.min.jpg
-pixa compress photo.jpg -o smaller.jpg           # 出力名指定
-pixa compress ./photos -r                        # → ./photos.min/ にミラー
-pixa compress logo.png -o logo.webp              # 拡張子で WebP に変換
-pixa compress big.png -o thumb.webp --max 400    # サムネイル
+pixa compress photo.jpg -o smaller.jpg           # explicit output
+pixa compress ./photos -r                        # → ./photos.min/ (mirrored)
+pixa compress logo.png -o logo.webp              # PNG → WebP via extension
+pixa compress big.png -o thumb.webp --max 400    # thumbnail
 ```
 
-`-o` を省略すると元ファイルを上書きせず `.min` サフィックスで保存します。圧縮後にサイズが大きくなる場合は元ファイルを保持します。
+When `-o` is omitted, pixa writes to `<input>.min.<ext>` (file) or
+`<input>.min/` (directory) — it never overwrites the original. If the
+optimizer would make a file *larger* (already-minified assets), the
+original bytes are written to the destination instead.
 
-### シート画像の自動分割
+### Split a sheet image into individual files
 
 ```bash
-# 表情シートから 5 体のアバターを切り出し
 pixa split hayate-expressions.png -o ./avatars \
   --names neutral,happy,thinking,surprised,sad
 ```
 
-- 背景色を自動検出
-- 各キャラの自然な bbox を検出（テキストラベルは自動除外）
-- 出力 PNG はすべて同じサイズに揃えて背景色でパディング
-- `--preview` で検出枠を可視化（`--preview-style detected|output|both`）
+- Background color is auto-detected from corner samples
+- Each object's bounding box is detected; text labels printed below
+  characters are excluded automatically
+- All output PNGs are uniformly sized — smaller crops are centered on a
+  max-sized canvas filled with the detected background color
+- When `--names` provides a count, the algorithm re-splits the widest
+  blob if the initial detection finds fewer objects than expected
+  (handles near-touching or variable-width characters)
 
-### Favicon
+Useful flags:
+- `--preview` writes `<basename>-preview.png` showing the detection
+- `--preview-style detected|output|both` controls what the preview draws
+- `--padding 10` adds extra breathing room around each object
+
+### Generate a favicon set
 
 ```bash
 pixa favicon logo.png -o ./public/favicon
-# favicon.ico (16/32/48 multi-res) + 16/32/180/192/512 PNG + HTML snippet
 ```
 
-### 形式変換
+Outputs:
+- `favicon.ico` (multi-resolution: 16×16, 32×32, 48×48)
+- `favicon-16x16.png`, `favicon-32x32.png`
+- `apple-touch-icon.png` (180×180)
+- `android-chrome-192x192.png`, `android-chrome-512x512.png`
+- HTML `<link>` snippet to paste into `<head>`
+
+### Convert format only
 
 ```bash
-pixa convert photo.png photo.webp                # 単一
-pixa convert ./photos ./out -r --format webp     # ディレクトリ再帰
+pixa convert photo.png photo.webp                # single file
+pixa convert ./photos ./out -r --format webp     # directory recursive
 ```
 
-### 画像情報
+For most cases, prefer `compress -o foo.webp` since that also re-encodes
+the output for size.
+
+### Inspect image
 
 ```bash
-pixa info photo.jpg
-pixa info photo.jpg --json
+pixa info photo.jpg                              # human-readable
+pixa info photo.jpg --json                       # machine-readable
 ```
 
-### Watermark 削除・検出
+### Remove or detect Gemini watermark
 
 ```bash
 pixa remove-watermark image.jpg -o clean.jpg
@@ -97,14 +127,16 @@ pixa remove-watermark ./photos -r -o ./cleaned --if-detected
 pixa detect image.jpg
 ```
 
-`--if-detected` を付けると、透かしが検出されない画像はスキップします。
+`--if-detected` skips images that don't actually contain a watermark.
 
-## ビルド
+## Installation
 
-### 前提条件
+### From source
+
+Requirements:
 
 - Rust 1.87+
-- CMake, NASM, pkg-config (mozjpeg のビルドに必要)
+- CMake, NASM, pkg-config (needed by `mozjpeg`)
 
 ```bash
 # Ubuntu / Debian
@@ -113,57 +145,65 @@ sudo apt install cmake nasm pkg-config libclang-dev
 # macOS
 brew install cmake nasm pkg-config
 
-# ビルド
+# Build
 cargo build --release
 ```
 
-バイナリは `target/release/pixa` に出力されます。
+The binary lands at `target/release/pixa`. Put it on your `$PATH`:
 
-## プロジェクト構成
+```bash
+cp target/release/pixa ~/.local/bin/   # or anywhere on PATH
+```
+
+## Project layout
 
 ```
 pixa/
 ├── Cargo.toml
-├── assets/                       # 埋め込みアルファマップ
-│   ├── watermark_48x48.png
-│   └── watermark_96x96.png
+├── assets/
+│   ├── watermark_48x48.png       # embedded chromakey alpha maps
+│   ├── watermark_96x96.png
+│   └── skills/pixa/SKILL.md      # bundled into the binary by `install`
 └── src/
-    ├── main.rs                   # CLI エントリポイント
-    ├── lib.rs                    # ライブラリ API
-    ├── compress.rs               # JPEG / PNG / WebP エンコード + リサイズ
-    ├── convert.rs                # フォーマット変換
-    ├── favicon.rs                # Favicon セット生成
-    ├── info.rs                   # メタデータ抽出
-    ├── split.rs                  # シート画像の自動分割
+    ├── main.rs                   # CLI entry point
+    ├── lib.rs                    # public library API
+    ├── compress.rs               # JPEG / PNG / WebP encode + resize
+    ├── convert.rs                # format conversion
+    ├── favicon.rs                # favicon set generation
+    ├── info.rs                   # metadata extraction
+    ├── split.rs                  # sheet auto-cropping
     ├── watermark.rs              # Reverse Alpha Blending
-    └── commands/                 # 各サブコマンドの CLI 実装
-        ├── mod.rs                # 共通ユーティリティ
-        ├── style.rs              # ANSI 色 / シンボル
+    └── commands/                 # one file per subcommand
+        ├── mod.rs                # shared utilities (walk, format, mirror)
+        ├── style.rs              # ANSI color / symbol helpers
         ├── compress.rs
         ├── convert.rs
         ├── detect.rs
         ├── favicon.rs
         ├── info.rs
+        ├── install.rs
         ├── remove_watermark.rs
         └── split.rs
 ```
 
-## Watermark 削除のしくみ
+## How watermark removal works
 
-Gemini は以下の式で可視透かしを適用します:
+Gemini composites its visible watermark using:
 
 ```
 watermarked = α × logo + (1 - α) × original
 ```
 
-これを逆算して元のピクセル値を復元します:
+pixa solves for the original pixel values:
 
 ```
 original = (watermarked - α × logo) / (1 - α)
 ```
 
-事前にキャリブレーションされた 48×48 / 96×96 のアルファマップを使用するため、AI 推論は不要で高速に動作します。検出は Spatial NCC + Gradient NCC + Variance Analysis の 3 段階で行います。
+Pre-calibrated 48×48 / 96×96 alpha maps (embedded in the binary) are
+used directly, so no AI inference is required. Detection runs in three
+stages: Spatial NCC + Gradient NCC + Variance Analysis.
 
-## ライセンス
+## License
 
 MIT
