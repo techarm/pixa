@@ -456,21 +456,72 @@ const PREVIEW_COLORS: &[[u8; 3]] = &[
     [107, 203, 119],
 ];
 
+/// What `write_preview` draws on top of the source image.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PreviewStyle {
+    /// Tight per-object bounding boxes (what the algorithm detected).
+    Detected,
+    /// The uniform max_w × max_h frame each saved PNG corresponds to,
+    /// centered on each object.
+    Output,
+    /// Both — detected as a thin solid line, output as a thicker line.
+    Both,
+}
+
 /// Draw colored rectangles around each detected object on a copy of
 /// `img` and save to `path`.
 pub fn write_preview(
     img: &DynamicImage,
     result: &SplitResult,
+    style: PreviewStyle,
     path: &Path,
 ) -> Result<(), SplitError> {
+    let (iw, ih) = img.dimensions();
     let mut canvas: RgbaImage = img.to_rgba8();
-    let stroke = ((img.width().min(img.height()) as f32) * 0.005).max(2.0) as u32;
+    let base_stroke = ((iw.min(ih) as f32) * 0.005).max(2.0) as u32;
+    let (max_w, max_h) = max_dimensions(&result.objects);
+
     for (i, obj) in result.objects.iter().enumerate() {
         let c = PREVIEW_COLORS[i % PREVIEW_COLORS.len()];
-        draw_rect(&mut canvas, obj, stroke, c);
+        match style {
+            PreviewStyle::Detected => {
+                draw_rect(&mut canvas, obj, base_stroke, c);
+            }
+            PreviewStyle::Output => {
+                let frame = output_frame(obj, max_w, max_h, iw, ih);
+                draw_rect(&mut canvas, &frame, base_stroke, c);
+            }
+            PreviewStyle::Both => {
+                // detected: thin
+                draw_rect(&mut canvas, obj, base_stroke.max(1), c);
+                // output: thicker, same color
+                let frame = output_frame(obj, max_w, max_h, iw, ih);
+                draw_rect(&mut canvas, &frame, base_stroke * 2, c);
+            }
+        }
     }
     canvas.save(path)?;
     Ok(())
+}
+
+/// Compute the output-frame rectangle for one detected object: a
+/// `max_w × max_h` box centered on the object, clipped to the image.
+fn output_frame(
+    obj: &DetectedObject,
+    max_w: u32,
+    max_h: u32,
+    image_w: u32,
+    image_h: u32,
+) -> DetectedObject {
+    let cx = obj.x + obj.w / 2;
+    let cy = obj.y + obj.h / 2;
+    let half_w = max_w / 2;
+    let half_h = max_h / 2;
+    let x = cx.saturating_sub(half_w);
+    let y = cy.saturating_sub(half_h);
+    let w = (x + max_w).min(image_w) - x;
+    let h = (y + max_h).min(image_h) - y;
+    DetectedObject { x, y, w, h }
 }
 
 fn draw_rect(canvas: &mut RgbaImage, obj: &DetectedObject, stroke: u32, color: [u8; 3]) {

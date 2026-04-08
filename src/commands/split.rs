@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
-use clap::Args;
-use pixa::split::{self, SplitOptions};
+use clap::{Args, ValueEnum};
+use pixa::split::{self, PreviewStyle, SplitOptions};
 use std::path::PathBuf;
 
 use super::style::{arrow, bold, cyan, dim, fail_mark, ok_mark};
@@ -23,6 +23,29 @@ pub struct SplitArgs {
     /// Always write a `<basename>-preview.png` next to the input
     #[arg(long)]
     pub preview: bool,
+    /// What to draw in the preview image
+    #[arg(long, value_enum, default_value = "output")]
+    pub preview_style: PreviewStyleArg,
+}
+
+#[derive(Copy, Clone, Debug, ValueEnum)]
+pub enum PreviewStyleArg {
+    /// Tight per-object detected bbox
+    Detected,
+    /// Uniform max_w × max_h frame for each output PNG
+    Output,
+    /// Both, with the output frame as the thicker line
+    Both,
+}
+
+impl From<PreviewStyleArg> for PreviewStyle {
+    fn from(a: PreviewStyleArg) -> Self {
+        match a {
+            PreviewStyleArg::Detected => PreviewStyle::Detected,
+            PreviewStyleArg::Output => PreviewStyle::Output,
+            PreviewStyleArg::Both => PreviewStyle::Both,
+        }
+    }
 }
 
 pub fn run(args: SplitArgs) -> Result<()> {
@@ -46,7 +69,7 @@ pub fn run(args: SplitArgs) -> Result<()> {
             let preview_path = preview_path(&args.input);
             // Run a no-expectation pass purely for visualization.
             if let Ok(diag) = split::detect_objects(&img, &SplitOptions::default()) {
-                let _ = split::write_preview(&img, &diag, &preview_path);
+                let _ = split::write_preview(&img, &diag, PreviewStyle::Detected, &preview_path);
                 eprintln!("{} {}", fail_mark(), e);
                 eprintln!("  preview written: {}", preview_path.display());
                 eprintln!(
@@ -146,7 +169,7 @@ pub fn run(args: SplitArgs) -> Result<()> {
 
     if args.preview {
         let preview = preview_path(&args.input);
-        split::write_preview(&img, &result, &preview)
+        split::write_preview(&img, &result, args.preview_style.into(), &preview)
             .with_context(|| format!("Failed to write preview: {}", preview.display()))?;
         println!("\npreview {} {}", arrow(), preview.display());
     }
