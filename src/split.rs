@@ -492,11 +492,11 @@ pub fn write_preview(
                 draw_rect(&mut canvas, &frame, base_stroke, c);
             }
             PreviewStyle::Both => {
-                // detected: thin
-                draw_rect(&mut canvas, obj, base_stroke.max(1), c);
-                // output: thicker, same color
+                // output: solid line at base stroke
                 let frame = output_frame(obj, max_w, max_h, iw, ih);
-                draw_rect(&mut canvas, &frame, base_stroke * 2, c);
+                draw_rect(&mut canvas, &frame, base_stroke, c);
+                // detected: dashed line, same stroke width
+                draw_dashed_rect(&mut canvas, obj, base_stroke, c);
             }
         }
     }
@@ -522,6 +522,45 @@ fn output_frame(
     let w = (x + max_w).min(image_w) - x;
     let h = (y + max_h).min(image_h) - y;
     DetectedObject { x, y, w, h }
+}
+
+/// Draw a dashed rectangle outline. Dash pattern is `DASH_ON` filled
+/// pixels then `DASH_OFF` skipped pixels, repeating along each side.
+fn draw_dashed_rect(canvas: &mut RgbaImage, obj: &DetectedObject, stroke: u32, color: [u8; 3]) {
+    const DASH_ON: u32 = 12;
+    const DASH_OFF: u32 = 8;
+    let (w, h) = (canvas.width(), canvas.height());
+    let x0 = obj.x;
+    let y0 = obj.y;
+    let x1 = (obj.x + obj.w).min(w).saturating_sub(1);
+    let y1 = (obj.y + obj.h).min(h).saturating_sub(1);
+    let rgba = Rgba([color[0], color[1], color[2], 255]);
+    let dash_on = |i: u32| (i % (DASH_ON + DASH_OFF)) < DASH_ON;
+
+    for t in 0..stroke {
+        for x in x0..=x1 {
+            if !dash_on(x - x0) {
+                continue;
+            }
+            if y0 + t < h {
+                canvas.put_pixel(x, y0 + t, rgba);
+            }
+            if y1 >= t {
+                canvas.put_pixel(x, y1 - t, rgba);
+            }
+        }
+        for y in y0..=y1 {
+            if !dash_on(y - y0) {
+                continue;
+            }
+            if x0 + t < w {
+                canvas.put_pixel(x0 + t, y, rgba);
+            }
+            if x1 >= t {
+                canvas.put_pixel(x1 - t, y, rgba);
+            }
+        }
+    }
 }
 
 fn draw_rect(canvas: &mut RgbaImage, obj: &DetectedObject, stroke: u32, color: [u8; 3]) {
