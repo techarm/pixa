@@ -1,11 +1,26 @@
-//! Image compression and optimization
+//! Image compression and optimization.
+//!
+//! Defaults are tuned for "make this image smaller without thinking":
+//!
+//!   JPEG → mozjpeg quality 75
+//!   PNG  → oxipng level 6 (max)
+//!   WebP → webp quality 80
+//!
+//! Metadata is always stripped. PNG is always lossless. JPEG and WebP
+//! are always lossy with the defaults above.
 
-use image::{DynamicImage, GenericImageView};
+use image::DynamicImage;
 use serde::{Deserialize, Serialize};
 use std::io::Cursor;
 use std::path::Path;
 use thiserror::Error;
-use tracing::info;
+
+/// JPEG quality default — visually transparent for typical photos.
+const JPEG_QUALITY: u8 = 75;
+/// PNG optimization level — max effort, still fast enough.
+const PNG_LEVEL: u8 = 6;
+/// WebP quality default.
+const WEBP_QUALITY: u8 = 80;
 
 #[derive(Error, Debug)]
 pub enum CompressError {
@@ -17,140 +32,65 @@ pub enum CompressError {
     Io(#[from] std::io::Error),
     #[error("PNG optimization error: {0}")]
     PngOptimize(String),
-    #[error("WebP encoding error: {0}")]
-    WebpEncode(String),
 }
 
-/// Compression options
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CompressOptions {
-    /// JPEG quality (1-100, default: 80)
-    pub jpeg_quality: u8,
-    /// PNG optimization level (0-6, default: 4)
-    pub png_level: u8,
-    /// WebP quality (1-100, default: 80)
-    pub webp_quality: u8,
-    /// Maximum width (optional, preserves aspect ratio)
-    pub max_width: Option<u32>,
-    /// Maximum height (optional, preserves aspect ratio)
-    pub max_height: Option<u32>,
-    /// Strip metadata
-    pub strip_metadata: bool,
-}
-
-impl Default for CompressOptions {
-    fn default() -> Self {
-        Self {
-            jpeg_quality: 80,
-            png_level: 4,
-            webp_quality: 80,
-            max_width: None,
-            max_height: None,
-            strip_metadata: true,
-        }
-    }
-}
-
-/// Compression result
-#[derive(Debug, Serialize, Deserialize)]
 pub struct CompressResult {
     pub original_size: u64,
     pub compressed_size: u64,
     pub savings_percent: f64,
-    pub output_width: u32,
-    pub output_height: u32,
+    /// `true` if the compressed output was larger than the original
+    /// and we kept the original instead.
+    pub kept_original: bool,
 }
 
-/// Compress an image with the given options
-pub fn compress_image(
-    input: &Path,
-    output: &Path,
-    opts: &CompressOptions,
-) -> Result<CompressResult, CompressError> {
+/// Compress `input` into `output`. Output format is determined by the
+/// `output` extension. If the compressed result would be larger than
+/// the original, the original is copied to `output` instead and
+/// `kept_original = true` is returned.
+pub fn compress_image(input: &Path, output: &Path) -> Result<CompressResult, CompressError> {
     let original_size = std::fs::metadata(input)?.len();
-    let mut img = image::open(input)?;
+    let img = image::open(input)?;
 
-    // Resize if needed
-    if let Some(result) = resize_if_needed(&img, opts.max_width, opts.max_height) {
-        img = result;
-    }
-
-    let (out_w, out_h) = img.dimensions();
     let ext = output
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_lowercase();
 
-    match ext.as_str() {
-        "jpg" | "jpeg" => {
-            compress_jpeg(&img, output, opts.jpeg_quality)?;
-        }
-        "png" => {
-            compress_png(&img, output, opts.png_level)?;
-        }
-        "webp" => {
-            compress_webp(&img, output, opts.webp_quality)?;
-        }
-        _ => {
-            // Fallback: save with image crate defaults
-            img.save(output)?;
-        }
-    }
+    let compressed = match ext.as_str() {
+        "jpg" | "jpeg" => encode_jpeg(&img, JPEG_QUALITY)?,
+        "png" => encode_png(&img, PNG_LEVEL)?,
+        "webp" => encode_webp(&img, WEBP_QUALITY)?,
+        other => return Err(CompressError::UnsupportedFormat(other.to_string())),
+    };
 
-    let compressed_size = std::fs::metadata(output)?.len();
+    // Decide whether to keep the compressed result or fall back to the
+    // original (if the optimizer made it bigger).
+    let (final_bytes, kept_original): (Vec<u8>, bool) = if compressed.len() as u64 >= original_size
+    {
+        (std::fs::read(input)?, true)
+    } else {
+        (compressed, false)
+    };
+
+    std::fs::write(output, &final_bytes)?;
+    let compressed_size = final_bytes.len() as u64;
     let savings = if original_size > 0 {
         (1.0 - compressed_size as f64 / original_size as f64) * 100.0
     } else {
         0.0
     };
 
-    info!(
-        "Compressed: {} -> {} ({:.1}% savings)",
-        format_size(original_size),
-        format_size(compressed_size),
-        savings
-    );
-
     Ok(CompressResult {
         original_size,
         compressed_size,
         savings_percent: savings,
-        output_width: out_w,
-        output_height: out_h,
+        kept_original,
     })
 }
 
-fn resize_if_needed(
-    img: &DynamicImage,
-    max_width: Option<u32>,
-    max_height: Option<u32>,
-) -> Option<DynamicImage> {
-    let (w, h) = img.dimensions();
-    let mut scale = 1.0f64;
-
-    if let Some(mw) = max_width {
-        if w > mw {
-            scale = scale.min(mw as f64 / w as f64);
-        }
-    }
-    if let Some(mh) = max_height {
-        if h > mh {
-            scale = scale.min(mh as f64 / h as f64);
-        }
-    }
-
-    if scale < 1.0 {
-        let new_w = (w as f64 * scale).round() as u32;
-        let new_h = (h as f64 * scale).round() as u32;
-        info!("Resizing: {}x{} -> {}x{}", w, h, new_w, new_h);
-        Some(img.resize_exact(new_w, new_h, image::imageops::FilterType::Lanczos3))
-    } else {
-        None
-    }
-}
-
-fn compress_jpeg(img: &DynamicImage, output: &Path, quality: u8) -> Result<(), CompressError> {
+fn encode_jpeg(img: &DynamicImage, quality: u8) -> Result<Vec<u8>, CompressError> {
     let rgb = img.to_rgb8();
     let (w, h) = rgb.dimensions();
 
@@ -158,71 +98,34 @@ fn compress_jpeg(img: &DynamicImage, output: &Path, quality: u8) -> Result<(), C
     comp.set_size(w as usize, h as usize);
     comp.set_quality(quality as f32);
 
-    let buf = Vec::new();
-    let mut started = comp.start_compress(buf).map_err(|e| {
-        CompressError::Image(image::ImageError::Encoding(
-            image::error::EncodingError::new(
-                image::error::ImageFormatHint::Exact(image::ImageFormat::Jpeg),
-                e,
-            ),
-        ))
-    })?;
-
-    started.write_scanlines(rgb.as_raw()).map_err(|e| {
-        CompressError::Image(image::ImageError::Encoding(
-            image::error::EncodingError::new(
-                image::error::ImageFormatHint::Exact(image::ImageFormat::Jpeg),
-                e,
-            ),
-        ))
-    })?;
-
-    let data = started.finish().map_err(|e| {
-        CompressError::Image(image::ImageError::Encoding(
-            image::error::EncodingError::new(
-                image::error::ImageFormatHint::Exact(image::ImageFormat::Jpeg),
-                e,
-            ),
-        ))
-    })?;
-
-    std::fs::write(output, data)?;
-    Ok(())
+    let mut started = comp.start_compress(Vec::new()).map_err(jpeg_err)?;
+    started.write_scanlines(rgb.as_raw()).map_err(jpeg_err)?;
+    started.finish().map_err(jpeg_err)
 }
 
-fn compress_png(img: &DynamicImage, output: &Path, level: u8) -> Result<(), CompressError> {
-    // First save with image crate
+fn jpeg_err(e: std::io::Error) -> CompressError {
+    CompressError::Image(image::ImageError::Encoding(
+        image::error::EncodingError::new(
+            image::error::ImageFormatHint::Exact(image::ImageFormat::Jpeg),
+            e,
+        ),
+    ))
+}
+
+fn encode_png(img: &DynamicImage, level: u8) -> Result<Vec<u8>, CompressError> {
     let mut buf = Vec::new();
     img.write_to(&mut Cursor::new(&mut buf), image::ImageFormat::Png)?;
 
-    // Then optimize with oxipng
     let mut opts = oxipng::Options::from_preset(level);
-    opts.strip = oxipng::StripChunks::Safe; // Remove safe-to-strip metadata
+    opts.strip = oxipng::StripChunks::Safe;
 
-    let optimized = oxipng::optimize_from_memory(&buf, &opts)
-        .map_err(|e| CompressError::PngOptimize(e.to_string()))?;
-
-    std::fs::write(output, optimized)?;
-    Ok(())
+    oxipng::optimize_from_memory(&buf, &opts).map_err(|e| CompressError::PngOptimize(e.to_string()))
 }
 
-fn compress_webp(img: &DynamicImage, output: &Path, quality: u8) -> Result<(), CompressError> {
+fn encode_webp(img: &DynamicImage, quality: u8) -> Result<Vec<u8>, CompressError> {
     let rgb = img.to_rgb8();
     let (w, h) = rgb.dimensions();
-
     let encoder = webp::Encoder::from_rgb(rgb.as_raw(), w, h);
     let mem = encoder.encode(quality as f32);
-
-    std::fs::write(output, &*mem)?;
-    Ok(())
-}
-
-fn format_size(bytes: u64) -> String {
-    if bytes < 1024 {
-        format!("{bytes}B")
-    } else if bytes < 1024 * 1024 {
-        format!("{:.1}KB", bytes as f64 / 1024.0)
-    } else {
-        format!("{:.1}MB", bytes as f64 / (1024.0 * 1024.0))
-    }
+    Ok(mem.to_vec())
 }

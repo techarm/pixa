@@ -5,7 +5,7 @@ pub mod info;
 pub mod split;
 pub mod watermark;
 
-pub use compress::{compress_image, CompressOptions};
+pub use compress::{compress_image, CompressResult};
 pub use convert::convert_image;
 pub use favicon::{generate_favicon_set, FaviconOptions, FaviconResult};
 pub use info::{get_image_info, ImageInfo};
