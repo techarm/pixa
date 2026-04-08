@@ -3,7 +3,7 @@ mod commands;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
-use commands::{compress, convert, detect, favicon, info, remove_watermark, split};
+use commands::{compress, convert, detect, favicon, info, install, remove_watermark, split};
 
 const EXAMPLES: &str = "\
 Examples:
@@ -17,6 +17,7 @@ Examples:
   pixa info photo.jpg
   pixa favicon logo.png -o ./favicon
   pixa split sheet.png -o ./out --names neutral,happy,thinking,surprised,sad
+  pixa install --skills
 ";
 
 #[derive(Parser)]
@@ -58,6 +59,9 @@ enum Commands {
 
     /// Auto-detect and crop individual objects from a sheet image
     Split(split::SplitArgs),
+
+    /// Install integrations (Claude Code skill, etc.)
+    Install(install::InstallArgs),
 }
 
 fn main() -> Result<()> {
@@ -82,5 +86,6 @@ fn main() -> Result<()> {
         Commands::Info(a) => info::run(a),
         Commands::Favicon(a) => favicon::run(a),
         Commands::Split(a) => split::run(a),
+        Commands::Install(a) => install::run(a),
     }
 }
