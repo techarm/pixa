@@ -405,11 +405,11 @@ const PREVIEW_COLORS: &[[u8; 3]] = &[
     [107, 203, 119],
 ];
 
-/// Draw colored rectangles + labels on a copy of `img` and save to `path`.
+/// Draw colored rectangles around each detected object on a copy of
+/// `img` and save to `path`.
 pub fn write_preview(
     img: &DynamicImage,
     result: &SplitResult,
-    names: &[String],
     path: &Path,
 ) -> Result<(), SplitError> {
     let mut canvas: RgbaImage = img.to_rgba8();
@@ -417,9 +417,6 @@ pub fn write_preview(
     for (i, obj) in result.objects.iter().enumerate() {
         let c = PREVIEW_COLORS[i % PREVIEW_COLORS.len()];
         draw_rect(&mut canvas, obj, stroke, c);
-        if let Some(name) = names.get(i) {
-            draw_label(&mut canvas, obj.x, obj.y, name, c);
-        }
     }
     canvas.save(path)?;
     Ok(())
@@ -449,27 +446,6 @@ fn draw_rect(canvas: &mut RgbaImage, obj: &DetectedObject, stroke: u32, color: [
             }
             if x1 >= t {
                 canvas.put_pixel(x1 - t, y, rgba);
-            }
-        }
-    }
-}
-
-/// Draw a tiny label as a colored bar above the rectangle. We don't have a
-/// font renderer in scope, so the label is a thick colored line whose
-/// length is proportional to the name length — enough to differentiate
-/// boxes when there are many overlapping ones.
-fn draw_label(canvas: &mut RgbaImage, x: u32, y: u32, name: &str, color: [u8; 3]) {
-    let (w, _h) = (canvas.width(), canvas.height());
-    let bar_h: u32 = 10;
-    let bar_w: u32 = (name.chars().count() as u32 * 14).max(40);
-    let by = y.saturating_sub(bar_h + 4);
-    let rgba = Rgba([color[0], color[1], color[2], 255]);
-    for dy in 0..bar_h {
-        for dx in 0..bar_w {
-            let px = x + dx;
-            let py = by + dy;
-            if px < w {
-                canvas.put_pixel(px, py, rgba);
             }
         }
     }

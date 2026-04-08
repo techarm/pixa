@@ -45,10 +45,7 @@ pub fn run(args: SplitArgs) -> Result<()> {
             let preview_path = preview_path(&args.input);
             // Run a no-expectation pass purely for visualization.
             if let Ok(diag) = split::detect_objects(&img, &SplitOptions::default()) {
-                let names: Vec<String> = (1..=diag.objects.len())
-                    .map(|i| format!("#{i}"))
-                    .collect();
-                let _ = split::write_preview(&img, &diag, &names, &preview_path);
+                let _ = split::write_preview(&img, &diag, &preview_path);
                 eprintln!("{} {}", fail_mark(), e);
                 eprintln!("  preview written: {}", preview_path.display());
                 eprintln!(
@@ -133,7 +130,7 @@ pub fn run(args: SplitArgs) -> Result<()> {
 
     if args.preview {
         let preview = preview_path(&args.input);
-        split::write_preview(&img, &result, &names, &preview)
+        split::write_preview(&img, &result, &preview)
             .with_context(|| format!("Failed to write preview: {}", preview.display()))?;
         println!("\npreview {} {}", arrow(), preview.display());
     }
