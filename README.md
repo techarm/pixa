@@ -136,14 +136,36 @@ pixa detect image.jpg
 
 ## Installation
 
-### From crates.io (recommended)
+### Prebuilt binary (recommended) — no Rust toolchain required
+
+**macOS / Linux:**
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/techarm/pixa/releases/latest/download/pixa-installer.sh | sh
+```
+
+**Windows (PowerShell):**
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://github.com/techarm/pixa/releases/latest/download/pixa-installer.ps1 | iex"
+```
+
+The installer downloads the right binary for your platform, places it
+on your `$PATH`, and prints the install location. Supported platforms:
+macOS (Intel + Apple Silicon), Linux (x86_64 + ARM64), Windows (x86_64).
+
+You can also grab the archive directly from the
+[Releases page](https://github.com/techarm/pixa/releases/latest).
+
+### From crates.io
 
 ```bash
 cargo install pixa
 ```
 
-This builds the latest published version from source. You'll need a
-Rust toolchain plus the system dependencies for `mozjpeg` (see below).
+Builds the latest published version from source. Requires a Rust
+toolchain plus the system dependencies for `mozjpeg` (see below).
 
 ### From source
 

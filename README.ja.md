@@ -108,7 +108,29 @@ pixa detect image.jpg
 
 ## インストール
 
-### crates.io から（推奨）
+### ビルド済みバイナリ（推奨） — Rust ツールチェーン不要
+
+**macOS / Linux:**
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/techarm/pixa/releases/latest/download/pixa-installer.sh | sh
+```
+
+**Windows (PowerShell):**
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://github.com/techarm/pixa/releases/latest/download/pixa-installer.ps1 | iex"
+```
+
+インストーラがプラットフォームに合ったバイナリを自動でダウンロードし、
+`$PATH` 配下に配置します。対応プラットフォーム: macOS (Intel + Apple
+Silicon)、Linux (x86_64 + ARM64)、Windows (x86_64)。
+
+[Releases ページ](https://github.com/techarm/pixa/releases/latest)から
+直接ダウンロードすることも可能です。
+
+### crates.io から
 
 ```bash
 cargo install pixa
