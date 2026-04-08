@@ -4,6 +4,7 @@ pub mod detect;
 pub mod favicon;
 pub mod info;
 pub mod remove_watermark;
+pub mod style;
 
 use anyhow::Result;
 use std::path::{Path, PathBuf};
@@ -66,12 +67,15 @@ pub fn ensure_parent(path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Human-readable byte size (e.g. "1.2 MB"). Consistent with info::format_size.
 pub fn format_size(bytes: u64) -> String {
     if bytes < 1024 {
-        format!("{bytes}B")
+        format!("{bytes} B")
     } else if bytes < 1024 * 1024 {
-        format!("{:.1}KB", bytes as f64 / 1024.0)
+        format!("{:.1} KB", bytes as f64 / 1024.0)
+    } else if bytes < 1024 * 1024 * 1024 {
+        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
     } else {
-        format!("{:.1}MB", bytes as f64 / (1024.0 * 1024.0))
+        format!("{:.2} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
     }
 }

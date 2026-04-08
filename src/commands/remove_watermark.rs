@@ -1,8 +1,9 @@
 use anyhow::{Context, Result};
 use clap::Args;
 use pixa::watermark::{WatermarkEngine, WatermarkSize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
+use super::style::{arrow, bold, dim, fail_mark, green, ok_mark, red, skip_mark, yellow};
 use super::{collect_inputs, ensure_parent, mirror_path};
 
 #[derive(Args)]
@@ -20,7 +21,7 @@ pub struct RemoveWatermarkArgs {
     pub force_size: Option<SizeArg>,
     /// Run detection first and skip images with no watermark
     #[arg(long)]
-    pub detect: bool,
+    pub if_detected: bool,
     /// Detection confidence threshold (0.0-1.0)
     #[arg(long, default_value = "0.35")]
     pub threshold: f32,
@@ -47,7 +48,7 @@ pub fn run(args: RemoveWatermarkArgs) -> Result<()> {
     let inputs = collect_inputs(&args.input, args.recursive)?;
 
     if inputs.is_empty() {
-        println!("No images found.");
+        println!("{} No images found.", yellow("!"));
         return Ok(());
     }
 
@@ -57,9 +58,9 @@ pub fn run(args: RemoveWatermarkArgs) -> Result<()> {
         args.input.parent().unwrap_or(args.input.as_path())
     };
 
-    let mut success = 0;
-    let mut skipped = 0;
-    let mut failed = 0;
+    let mut ok = 0u32;
+    let mut skipped = 0u32;
+    let mut failed = 0u32;
 
     for input in &inputs {
         let out_path = if inputs.len() == 1 && !args.input.is_dir() {
@@ -68,32 +69,48 @@ pub fn run(args: RemoveWatermarkArgs) -> Result<()> {
             mirror_path(input, input_root, args.output.as_deref())
         };
 
-        match process_one(&engine, input, &out_path, size, args.detect, args.threshold) {
+        match process_one(&engine, input, &out_path, size, args.if_detected, args.threshold) {
             Ok(true) => {
-                success += 1;
-                println!("OK: {}", input.display());
+                ok += 1;
+                println!(
+                    "{} {} {} {}",
+                    ok_mark(),
+                    input.display(),
+                    arrow(),
+                    dim(&out_path.display().to_string())
+                );
             }
             Ok(false) => {
                 skipped += 1;
-                println!("SKIP: {} (no watermark)", input.display());
+                println!("{} {} {}", skip_mark(), input.display(), dim("(no watermark)"));
             }
             Err(e) => {
                 failed += 1;
-                eprintln!("FAIL: {}: {e}", input.display());
+                eprintln!("{} {}: {}", fail_mark(), input.display(), red(&e.to_string()));
             }
         }
     }
 
     if inputs.len() > 1 {
-        println!("\nDone: {success} succeeded, {skipped} skipped, {failed} failed");
+        let parts = [
+            (ok, "ok", green as fn(&str) -> String),
+            (skipped, "skipped", yellow as fn(&str) -> String),
+            (failed, "failed", red as fn(&str) -> String),
+        ];
+        let msg: Vec<String> = parts
+            .iter()
+            .filter(|(n, _, _)| *n > 0)
+            .map(|(n, label, col)| col(&format!("{n} {label}")))
+            .collect();
+        println!("\n{}  {}", bold("Summary"), msg.join(", "));
     }
     Ok(())
 }
 
 fn process_one(
     engine: &WatermarkEngine,
-    input: &std::path::Path,
-    output: &std::path::Path,
+    input: &Path,
+    output: &Path,
     size: Option<WatermarkSize>,
     detect_first: bool,
     threshold: f32,

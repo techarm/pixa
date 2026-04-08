@@ -4,6 +4,7 @@ use pixa::favicon::{generate_favicon_set, FaviconOptions};
 use std::path::PathBuf;
 
 use super::format_size;
+use super::style::{bold, dim, ok_mark};
 
 #[derive(Args)]
 pub struct FaviconArgs {
@@ -31,15 +32,22 @@ pub fn run(args: FaviconArgs) -> Result<()> {
         return Ok(());
     }
 
-    println!("Favicon set generated in: {}", args.output_dir.display());
-    println!();
+    println!(
+        "{} Favicon set generated in {} {}",
+        ok_mark(),
+        bold(&args.output_dir.display().to_string()),
+        dim(&format!(
+            "({} files, {})",
+            result.generated_files.len(),
+            format_size(result.total_size)
+        )),
+    );
     for file in &result.generated_files {
-        println!("  {}", file.display());
+        println!("  {} {}", dim("•"), file.display());
     }
-    println!();
-    println!("Total size: {}", format_size(result.total_size));
-    println!();
-    println!("HTML snippet:");
-    println!("{}", result.html_snippet);
+    println!("\n{}", bold("HTML snippet"));
+    for line in result.html_snippet.lines() {
+        println!("  {line}");
+    }
     Ok(())
 }

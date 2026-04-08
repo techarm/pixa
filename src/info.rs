@@ -58,7 +58,7 @@ pub fn get_image_info(path: &Path) -> Result<ImageInfo, InfoError> {
 
     // Detect format from file content
     let format = image::ImageFormat::from_path(path)
-        .map(|f| format!("{f:?}"))
+        .map(|f| format!("{f:?}").to_uppercase())
         .unwrap_or_else(|_| "Unknown".to_string());
 
     // SHA256 hash

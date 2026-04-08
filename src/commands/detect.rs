@@ -3,6 +3,8 @@ use clap::Args;
 use pixa::watermark::WatermarkEngine;
 use std::path::PathBuf;
 
+use super::style::{bold, dim, fail_mark, green, ok_mark, red};
+
 #[derive(Args)]
 pub struct DetectArgs {
     /// Input image file
@@ -19,21 +21,31 @@ pub fn run(args: DetectArgs) -> Result<()> {
 
     if args.json {
         println!("{}", serde_json::to_string_pretty(&result)?);
-    } else {
-        println!("File: {}", args.input.display());
-        println!(
-            "Watermark: {}",
-            if result.detected {
-                "DETECTED"
-            } else {
-                "Not detected"
-            }
-        );
-        println!("Confidence: {:.1}%", result.confidence * 100.0);
-        println!("Size: {:?}", result.size);
-        println!("Spatial score: {:.3}", result.spatial_score);
-        println!("Gradient score: {:.3}", result.gradient_score);
-        println!("Variance score: {:.3}", result.variance_score);
+        return Ok(());
     }
+
+    let (mark, status) = if result.detected {
+        (ok_mark(), red("DETECTED"))
+    } else {
+        (fail_mark(), green("not detected"))
+    };
+    let pct = result.confidence * 100.0;
+
+    println!(
+        "{} {} {} {} {}",
+        mark,
+        bold(&args.input.display().to_string()),
+        dim("·"),
+        status,
+        dim(&format!("({pct:.1}%)"))
+    );
+    println!(
+        "  {} size={:?} spatial={:.3} gradient={:.3} variance={:.3}",
+        dim("scores"),
+        result.size,
+        result.spatial_score,
+        result.gradient_score,
+        result.variance_score
+    );
     Ok(())
 }

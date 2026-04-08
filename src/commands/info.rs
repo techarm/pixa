@@ -3,6 +3,8 @@ use clap::Args;
 use pixa::info::get_image_info;
 use std::path::PathBuf;
 
+use super::style::{bold, cyan, dim};
+
 #[derive(Args)]
 pub struct InfoArgs {
     /// Input image file
@@ -19,21 +21,36 @@ pub fn run(args: InfoArgs) -> Result<()> {
         return Ok(());
     }
 
-    println!("File:       {}", info.file_name);
-    println!("Format:     {}", info.format);
-    println!("Size:       {} ({})", info.file_size_human, info.file_size);
-    println!("Dimensions: {}x{}", info.width, info.height);
-    println!("Pixels:     {}", info.pixel_count);
-    println!("Color:      {}", info.color_type);
-    println!("Bit depth:  {}", info.bit_depth);
-    println!("Alpha:      {}", info.has_alpha);
-    println!("SHA-256:    {}", info.sha256);
+    let label = |s: &str| dim(&format!("{s:<11}"));
+    println!("{}{}", label("File"), bold(&info.file_name));
+    println!("{}{}", label("Format"), info.format);
+    println!(
+        "{}{} {}",
+        label("Size"),
+        info.file_size_human,
+        dim(&format!("({} bytes)", info.file_size))
+    );
+    println!(
+        "{}{}",
+        label("Dimensions"),
+        cyan(&format!("{}×{}", info.width, info.height))
+    );
+    println!("{}{}", label("Pixels"), info.pixel_count);
+    println!("{}{}", label("Color"), info.color_type);
+    println!("{}{}-bit", label("Depth"), info.bit_depth);
+    println!(
+        "{}{}",
+        label("Alpha"),
+        if info.has_alpha { "yes" } else { "no" }
+    );
+    println!("{}{}", label("SHA-256"), dim(&info.sha256));
+
     if let Some(exif) = &info.exif {
-        println!("\nEXIF ({} fields):", exif.len());
+        println!("\n{} {}", bold("EXIF"), dim(&format!("({} fields)", exif.len())));
         let mut entries: Vec<_> = exif.iter().collect();
         entries.sort_by_key(|(k, _)| k.to_string());
         for (key, value) in entries {
-            println!("  {key}: {value}");
+            println!("  {} {value}", dim(&format!("{key}:")));
         }
     }
     Ok(())
