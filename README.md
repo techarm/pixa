@@ -1,5 +1,10 @@
 # pixa 🖼️
 
+[![Crates.io](https://img.shields.io/crates/v/pixa.svg)](https://crates.io/crates/pixa)
+[![Downloads](https://img.shields.io/crates/d/pixa.svg)](https://crates.io/crates/pixa)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![CI](https://github.com/techarm/pixa/actions/workflows/release.yml/badge.svg)](https://github.com/techarm/pixa/actions/workflows/release.yml)
+
 [English](README.md) | [日本語](README.ja.md)
 
 A fast Rust image processing CLI — optimize AI-generated images for the
@@ -131,6 +136,15 @@ pixa detect image.jpg
 
 ## Installation
 
+### From crates.io (recommended)
+
+```bash
+cargo install pixa
+```
+
+This builds the latest published version from source. You'll need a
+Rust toolchain plus the system dependencies for `mozjpeg` (see below).
+
 ### From source
 
 Requirements:
@@ -146,6 +160,8 @@ sudo apt install cmake nasm pkg-config libclang-dev
 brew install cmake nasm pkg-config
 
 # Build
+git clone https://github.com/techarm/pixa
+cd pixa
 cargo build --release
 ```
 

@@ -1,5 +1,10 @@
 # pixa 🖼️
 
+[![Crates.io](https://img.shields.io/crates/v/pixa.svg)](https://crates.io/crates/pixa)
+[![Downloads](https://img.shields.io/crates/d/pixa.svg)](https://crates.io/crates/pixa)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![CI](https://github.com/techarm/pixa/actions/workflows/release.yml/badge.svg)](https://github.com/techarm/pixa/actions/workflows/release.yml)
+
 [English](README.md) | [日本語](README.ja.md)
 
 Rust 製の高速画像処理 CLI ツールキット。AI 生成画像を Web 配信向けに最適化したり、シート画像を分割したり、Gemini の透かしを除去したりするための実用ツール集。
@@ -101,9 +106,20 @@ pixa detect image.jpg
 
 `--if-detected` を付けると、透かしが検出されない画像はスキップします。
 
-## ビルド
+## インストール
 
-### 前提条件
+### crates.io から（推奨）
+
+```bash
+cargo install pixa
+```
+
+最新版がソースからビルドされます。Rust ツールチェーンと、`mozjpeg` の
+ビルドに必要なシステム依存（下記）が必要です。
+
+### ソースからビルド
+
+前提条件:
 
 - Rust 1.87+
 - CMake, NASM, pkg-config (mozjpeg のビルドに必要)
@@ -116,6 +132,8 @@ sudo apt install cmake nasm pkg-config libclang-dev
 brew install cmake nasm pkg-config
 
 # ビルド
+git clone https://github.com/techarm/pixa
+cd pixa
 cargo build --release
 ```
 
