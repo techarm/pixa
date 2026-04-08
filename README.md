@@ -12,6 +12,7 @@ Rust 製の高速画像処理 CLI ツールキット。
 | **形式変換**       | JPEG ↔ PNG ↔ WebP ↔ BMP ↔ GIF ↔ TIFF                       |
 | **情報表示**       | 寸法・カラー・EXIF・SHA-256 等を一覧                       |
 | **Favicon 生成**   | 画像からブラウザ向けアイコンセットを生成                   |
+| **Split**          | シート画像から各オブジェクトを自動検出して切り出し         |
 
 `remove-watermark` / `compress` / `convert` はファイルとディレクトリの両方を受け付けます。ディレクトリを処理する場合は `-r/--recursive` を付けてください。
 
@@ -46,6 +47,10 @@ pixa info photo.jpg --json
 
 # Favicon セット生成
 pixa favicon logo.png -o ./favicon-output
+
+# シート画像から各キャラを自動検出して切り出し
+pixa split hayate-expressions.png -o ./avatars \
+  --names neutral,happy,thinking,surprised,sad
 ```
 
 ## ビルド
@@ -84,6 +89,7 @@ pixa/
     ├── convert.rs
     ├── info.rs
     ├── favicon.rs
+    ├── split.rs
     └── commands/                 # 各サブコマンド実装
         ├── mod.rs                # 共通ユーティリティ
         ├── remove_watermark.rs
@@ -91,7 +97,8 @@ pixa/
         ├── compress.rs
         ├── convert.rs
         ├── info.rs
-        └── favicon.rs
+        ├── favicon.rs
+        └── split.rs
 ```
 
 ## Watermark 削除のしくみ

@@ -2,6 +2,7 @@ pub mod compress;
 pub mod convert;
 pub mod favicon;
 pub mod info;
+pub mod split;
 pub mod watermark;
 
 pub use compress::{compress_image, CompressOptions};

@@ -3,7 +3,7 @@ mod commands;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
-use commands::{compress, convert, detect, favicon, info, remove_watermark};
+use commands::{compress, convert, detect, favicon, info, remove_watermark, split};
 
 const EXAMPLES: &str = "\
 Examples:
@@ -16,6 +16,7 @@ Examples:
   pixa convert ./photos ./out -r --format webp
   pixa info photo.jpg
   pixa favicon logo.png -o ./favicon
+  pixa split sheet.png -o ./out --names neutral,happy,thinking,surprised,sad
 ";
 
 #[derive(Parser)]
@@ -54,6 +55,9 @@ enum Commands {
 
     /// Generate a web-ready favicon/icon set from an image
     Favicon(favicon::FaviconArgs),
+
+    /// Auto-detect and crop individual objects from a sheet image
+    Split(split::SplitArgs),
 }
 
 fn main() -> Result<()> {
@@ -77,5 +81,6 @@ fn main() -> Result<()> {
         Commands::Convert(a) => convert::run(a),
         Commands::Info(a) => info::run(a),
         Commands::Favicon(a) => favicon::run(a),
+        Commands::Split(a) => split::run(a),
     }
 }
