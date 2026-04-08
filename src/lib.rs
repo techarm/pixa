@@ -2,7 +2,6 @@ pub mod compress;
 pub mod convert;
 pub mod favicon;
 pub mod info;
-pub mod prompt;
 pub mod remove_bg;
 pub mod watermark;
 
@@ -10,9 +9,6 @@ pub use compress::{compress_image, CompressOptions};
 pub use convert::convert_image;
 pub use favicon::{generate_favicon_set, FaviconOptions, FaviconResult};
 pub use info::{get_image_info, ImageInfo};
-pub use prompt::{
-    detect_available_providers, generate_prompt, PromptOptions, PromptResult, Provider,
-};
 pub use remove_bg::{
     remove_background, remove_green_background, remove_green_background_file,
     trim_transparent_borders, RemoveBgOptions, RemoveBgResult,

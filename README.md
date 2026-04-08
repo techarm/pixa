@@ -10,7 +10,6 @@ Rust 製の高速画像処理 CLI ツールキット。
 | **画像軽量化**     | MozJPEG / OxiPNG / WebP による高品質圧縮                           |
 | **形式変換**       | JPEG ↔ PNG ↔ WebP ↔ BMP ↔ GIF ↔ TIFF                               |
 | **情報表示**       | 寸法・カラー・EXIF・SHA-256 等を一覧                               |
-| **プロンプト生成** | ローカル AI CLI (claude/gemini) で Nanobanana 向けプロンプトを生成 |
 | **Favicon 生成**   | 既存画像からブラウザ向けアイコンセットを生成                       |
 | **背景除去**       | HSV ベースの緑背景除去 + 自動トリミング                            |
 
@@ -36,18 +35,6 @@ pixa info photo.jpg --json
 
 # バッチ処理
 pixa batch ./input/ -o ./output/ --operation remove-watermark
-
-# プロンプト生成（テキストから）
-pixa prompt "猫が宇宙で浮いてる絵" --provider claude
-
-# プロンプト生成（参考画像から）
-pixa prompt --image reference.jpg --provider gemini
-
-# プロンプト生成（テキスト + 参考画像 + スタイル指定、3バリエーション）
-pixa prompt "サイバーパンクな東京" --image ref.jpg --style anime --ratio 16:9 -n 3
-
-# 利用可能な AI CLI を確認
-pixa prompt --list-providers
 ```
 
 ## ビルド
@@ -85,7 +72,6 @@ pixa/
     ├── compress.rs
     ├── convert.rs
     ├── info.rs
-    ├── prompt.rs
     ├── remove_bg.rs
     └── favicon.rs
 ```

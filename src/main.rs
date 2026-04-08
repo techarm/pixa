@@ -5,7 +5,6 @@ use pixa::{
     convert::convert_image,
     favicon::{self, FaviconOptions},
     info::get_image_info,
-    prompt::{self, PromptLanguage, PromptOptions, Provider},
     remove_bg::{self, RemoveBgOptions},
     watermark::{WatermarkEngine, WatermarkSize},
 };
@@ -107,36 +106,6 @@ enum Commands {
         /// JPEG quality for compress operation
         #[arg(short, long, default_value = "80")]
         quality: u8,
-    },
-
-    /// Generate Nanobanana-optimized image generation prompts via local AI CLI
-    Prompt {
-        /// Text description (e.g., "猫が宇宙で浮いてる絵")
-        description: Option<String>,
-        /// Reference image path
-        #[arg(short, long)]
-        image: Option<PathBuf>,
-        /// AI provider to use
-        #[arg(short, long, value_parser = ["claude", "gemini"])]
-        provider: Option<String>,
-        /// Art style (e.g., "anime", "photorealistic", "watercolor")
-        #[arg(short, long)]
-        style: Option<String>,
-        /// Aspect ratio (e.g., "16:9", "1:1")
-        #[arg(long)]
-        ratio: Option<String>,
-        /// Number of prompt variations to generate
-        #[arg(short = 'n', long, default_value = "1")]
-        variations: u8,
-        /// Additional instructions
-        #[arg(long)]
-        extra: Option<String>,
-        /// Output as JSON
-        #[arg(long)]
-        json: bool,
-        /// List available AI providers
-        #[arg(long)]
-        list_providers: bool,
     },
 
     /// Remove background from an image (make transparent)
@@ -378,85 +347,6 @@ async fn main() -> Result<()> {
             }
 
             println!("\nDone: {success} succeeded, {failed} failed");
-        }
-
-        Commands::Prompt {
-            description,
-            image,
-            provider,
-            style,
-            ratio,
-            variations,
-            extra,
-            json,
-            list_providers,
-        } => {
-            if list_providers {
-                let available = prompt::detect_available_providers();
-                if available.is_empty() {
-                    println!("利用可能な AI CLI が見つかりません。");
-                    println!("以下のいずれかをインストールしてください:");
-                    println!("  - claude: https://docs.anthropic.com/en/docs/claude-code");
-                    println!("  - gemini: https://github.com/google-gemini/gemini-cli");
-                } else {
-                    println!("利用可能なプロバイダー:");
-                    for p in &available {
-                        println!("  ✓ {}", p.display_name());
-                    }
-                }
-                return Ok(());
-            }
-
-            // 入力チェック
-            if description.is_none() && image.is_none() {
-                anyhow::bail!(
-                    "テキスト指示か参考画像のどちらかを指定してください。\n\
-                     例: pixa prompt \"猫が宇宙で浮いてる\"\n\
-                     例: pixa prompt --image ref.jpg\n\
-                     例: pixa prompt \"サイバーパンク風\" --image ref.jpg"
-                );
-            }
-
-            // プロバイダー決定
-            let provider: Provider = if let Some(p) = provider {
-                p.parse().map_err(|e: String| anyhow::anyhow!(e))?
-            } else {
-                // 自動検出: 最初に見つかったものを使用
-                let available = prompt::detect_available_providers();
-                *available.first().ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "AI CLI が見つかりません。--provider で指定するか、claude / gemini CLI をインストールしてください。"
-                    )
-                })?
-            };
-
-            let opts = PromptOptions {
-                description,
-                reference_image: image,
-                style,
-                aspect_ratio: ratio,
-                extra_instructions: extra,
-                variations,
-                language: PromptLanguage::English,
-            };
-
-            let result = prompt::generate_prompt(provider, &opts)?;
-
-            if json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                if result.prompts.len() == 1 {
-                    println!("{}", result.prompts[0]);
-                } else {
-                    for (i, p) in result.prompts.iter().enumerate() {
-                        if i > 0 {
-                            println!();
-                        }
-                        println!("--- Variation {} ---", i + 1);
-                        println!("{p}");
-                    }
-                }
-            }
         }
 
         Commands::RemoveBg {
