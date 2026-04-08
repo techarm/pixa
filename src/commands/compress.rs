@@ -18,6 +18,11 @@ pub struct CompressArgs {
     /// Recursively process directories
     #[arg(short, long)]
     pub recursive: bool,
+    /// Resize so the longest edge is at most this many pixels
+    /// (preserves aspect ratio). Useful for shrinking AI-generated
+    /// 4K images down to web-friendly sizes.
+    #[arg(long, value_name = "PIXELS")]
+    pub max: Option<u32>,
 }
 
 pub fn run(args: CompressArgs) -> Result<()> {
@@ -35,7 +40,7 @@ pub fn run(args: CompressArgs) -> Result<()> {
             .clone()
             .unwrap_or_else(|| default_file_output(&inputs[0]));
         ensure_parent(&out_path)?;
-        process_one(&inputs[0], &out_path)?;
+        process_one(&inputs[0], &out_path, args.max)?;
         return Ok(());
     }
 
@@ -58,7 +63,7 @@ pub fn run(args: CompressArgs) -> Result<()> {
             failed += 1;
             continue;
         }
-        match compress_image(input, &out_path) {
+        match compress_image(input, &out_path, args.max) {
             Ok(r) => {
                 ok += 1;
                 total_orig += r.original_size;
@@ -92,8 +97,8 @@ pub fn run(args: CompressArgs) -> Result<()> {
     Ok(())
 }
 
-fn process_one(input: &Path, output: &Path) -> Result<()> {
-    match compress_image(input, output) {
+fn process_one(input: &Path, output: &Path, max_edge: Option<u32>) -> Result<()> {
+    match compress_image(input, output, max_edge) {
         Ok(r) => {
             print_line(input, output, &r);
             Ok(())

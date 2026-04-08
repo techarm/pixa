@@ -9,7 +9,7 @@
 //! Metadata is always stripped. PNG is always lossless. JPEG and WebP
 //! are always lossy with the defaults above.
 
-use image::DynamicImage;
+use image::{DynamicImage, GenericImageView};
 use serde::{Deserialize, Serialize};
 use std::io::Cursor;
 use std::path::Path;
@@ -45,12 +45,24 @@ pub struct CompressResult {
 }
 
 /// Compress `input` into `output`. Output format is determined by the
-/// `output` extension. If the compressed result would be larger than
-/// the original, the original is copied to `output` instead and
+/// `output` extension. If `max_edge` is `Some`, the image is resized
+/// (preserving aspect ratio) so that its longest edge is at most that
+/// many pixels. If the compressed result would be larger than the
+/// original, the original is copied to `output` instead and
 /// `kept_original = true` is returned.
-pub fn compress_image(input: &Path, output: &Path) -> Result<CompressResult, CompressError> {
+pub fn compress_image(
+    input: &Path,
+    output: &Path,
+    max_edge: Option<u32>,
+) -> Result<CompressResult, CompressError> {
     let original_size = std::fs::metadata(input)?.len();
-    let img = image::open(input)?;
+    let mut img = image::open(input)?;
+
+    if let Some(limit) = max_edge {
+        if let Some(resized) = resize_to_max_edge(&img, limit) {
+            img = resized;
+        }
+    }
 
     let ext = output
         .extension()
@@ -88,6 +100,20 @@ pub fn compress_image(input: &Path, output: &Path) -> Result<CompressResult, Com
         savings_percent: savings,
         kept_original,
     })
+}
+
+/// Resize so the longest edge is exactly `max_edge`, preserving
+/// aspect ratio. Returns `None` if the image is already smaller.
+fn resize_to_max_edge(img: &DynamicImage, max_edge: u32) -> Option<DynamicImage> {
+    let (w, h) = img.dimensions();
+    let longest = w.max(h);
+    if longest <= max_edge {
+        return None;
+    }
+    let scale = max_edge as f64 / longest as f64;
+    let new_w = ((w as f64) * scale).round().max(1.0) as u32;
+    let new_h = ((h as f64) * scale).round().max(1.0) as u32;
+    Some(img.resize_exact(new_w, new_h, image::imageops::FilterType::Lanczos3))
 }
 
 fn encode_jpeg(img: &DynamicImage, quality: u8) -> Result<Vec<u8>, CompressError> {
