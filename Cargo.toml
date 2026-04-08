@@ -1,12 +1,34 @@
-[workspace]
-resolver = "2"
-members = [
-    "crates/core",
-    "crates/cli",
-    "crates/web",
-]
-
-[workspace.package]
+[package]
+name = "pixa"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
+
+[[bin]]
+name = "pixa"
+path = "src/main.rs"
+
+[lib]
+name = "pixa"
+path = "src/lib.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+image = "0.25"
+oxipng = "9"
+mozjpeg = "0.10"
+webp = "0.3"
+fast_image_resize = "5"
+kamadak-exif = "0.5"
+sha2 = "0.10"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1"
+reqwest = { version = "0.12", features = ["json", "multipart"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs"] }
+
+[dev-dependencies]
+tempfile = "3"

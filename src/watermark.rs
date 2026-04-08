@@ -20,8 +20,8 @@ use thiserror::Error;
 use tracing::{debug, info};
 
 /// Embedded alpha map assets (captured watermark patterns on black background)
-const BG_48_PNG: &[u8] = include_bytes!("../../../assets/watermark_48x48.png");
-const BG_96_PNG: &[u8] = include_bytes!("../../../assets/watermark_96x96.png");
+const BG_48_PNG: &[u8] = include_bytes!("../assets/watermark_48x48.png");
+const BG_96_PNG: &[u8] = include_bytes!("../assets/watermark_96x96.png");
 
 #[derive(Error, Debug)]
 pub enum WatermarkError {
