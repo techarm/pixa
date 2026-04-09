@@ -26,7 +26,7 @@ Examples:
     about = "A fast image processing toolkit",
     after_help = EXAMPLES,
 )]
-struct Cli {
+pub struct Cli {
     /// Enable verbose (debug) logging
     #[arg(short, long, global = true)]
     verbose: bool,
