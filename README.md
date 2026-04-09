@@ -32,7 +32,74 @@ directory — pass `-r/--recursive` to walk into subdirectories.
 > [GeminiWatermarkTool](https://github.com/allenk/GeminiWatermarkTool)
 > by Allen Kuo (MIT License).
 
-## Use from AI coding agents
+## Installation
+
+### Homebrew (macOS / Linux)
+
+```bash
+brew tap techarm/tap
+brew install pixa
+```
+
+Subsequent updates: `brew upgrade pixa`.
+
+### Prebuilt binary installer — no Rust toolchain required
+
+**macOS / Linux:**
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/techarm/pixa/releases/latest/download/pixa-installer.sh | sh
+```
+
+**Windows (PowerShell):**
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://github.com/techarm/pixa/releases/latest/download/pixa-installer.ps1 | iex"
+```
+
+The installer downloads the right binary for your platform, places it
+on your `$PATH`, and prints the install location. Supported platforms:
+macOS (Intel + Apple Silicon), Linux (x86_64 + ARM64), Windows (x86_64).
+
+You can also grab the archive directly from the
+[Releases page](https://github.com/techarm/pixa/releases/latest).
+
+### From crates.io
+
+```bash
+cargo install pixa
+```
+
+Builds the latest published version from source. Requires a Rust
+toolchain plus the system dependencies for `mozjpeg` (see below).
+
+### From source
+
+Requirements:
+
+- Rust 1.87+
+- CMake, NASM, pkg-config (needed by `mozjpeg`)
+
+```bash
+# Ubuntu / Debian
+sudo apt install cmake nasm pkg-config libclang-dev
+
+# macOS
+brew install cmake nasm pkg-config
+
+# Build
+git clone https://github.com/techarm/pixa
+cd pixa
+cargo build --release
+```
+
+The binary lands at `target/release/pixa`. Put it on your `$PATH`:
+
+```bash
+cp target/release/pixa ~/.local/bin/   # or anywhere on PATH
+```
+
 
 Claude Code, GitHub Copilot, and other coding agents can call pixa
 automatically once you install the Skill file:
@@ -45,6 +112,7 @@ This drops a Skill at `~/.claude/skills/pixa/SKILL.md` so the agent
 knows when and how to use pixa for image-related requests. Re-run with
 `--force` to update.
 
+## Use from AI coding agents
 ## Quick start
 
 ### Web-optimize an AI-generated image (one command)
@@ -133,65 +201,6 @@ pixa detect image.jpg
 ```
 
 `--if-detected` skips images that don't actually contain a watermark.
-
-## Installation
-
-### Prebuilt binary (recommended) — no Rust toolchain required
-
-**macOS / Linux:**
-
-```bash
-curl --proto '=https' --tlsv1.2 -LsSf \
-  https://github.com/techarm/pixa/releases/latest/download/pixa-installer.sh | sh
-```
-
-**Windows (PowerShell):**
-
-```powershell
-powershell -ExecutionPolicy ByPass -c "irm https://github.com/techarm/pixa/releases/latest/download/pixa-installer.ps1 | iex"
-```
-
-The installer downloads the right binary for your platform, places it
-on your `$PATH`, and prints the install location. Supported platforms:
-macOS (Intel + Apple Silicon), Linux (x86_64 + ARM64), Windows (x86_64).
-
-You can also grab the archive directly from the
-[Releases page](https://github.com/techarm/pixa/releases/latest).
-
-### From crates.io
-
-```bash
-cargo install pixa
-```
-
-Builds the latest published version from source. Requires a Rust
-toolchain plus the system dependencies for `mozjpeg` (see below).
-
-### From source
-
-Requirements:
-
-- Rust 1.87+
-- CMake, NASM, pkg-config (needed by `mozjpeg`)
-
-```bash
-# Ubuntu / Debian
-sudo apt install cmake nasm pkg-config libclang-dev
-
-# macOS
-brew install cmake nasm pkg-config
-
-# Build
-git clone https://github.com/techarm/pixa
-cd pixa
-cargo build --release
-```
-
-The binary lands at `target/release/pixa`. Put it on your `$PATH`:
-
-```bash
-cp target/release/pixa ~/.local/bin/   # or anywhere on PATH
-```
 
 ## Project layout
 
