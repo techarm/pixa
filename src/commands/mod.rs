@@ -1,3 +1,4 @@
+pub mod completions;
 pub mod compress;
 pub mod convert;
 pub mod detect;

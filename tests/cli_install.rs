@@ -77,3 +77,36 @@ fn install_without_flag_fails() {
         .assert()
         .failure();
 }
+
+#[test]
+fn install_completions_writes_completion_file() {
+    let fake_home = TempDir::new().unwrap();
+    // Create the zsh site-functions dir so detect_shell_and_path picks it
+    let zsh_dir = fake_home.path().join(".zfunc");
+    std::fs::create_dir_all(&zsh_dir).unwrap();
+
+    Command::cargo_bin("pixa")
+        .unwrap()
+        .env("HOME", fake_home.path())
+        .env("SHELL", "/bin/zsh")
+        // Override the Homebrew paths so it falls back to ~/.zfunc
+        .args(["install", "--completions", "--force"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("completions installed"));
+}
+
+#[test]
+fn install_skills_and_completions_together() {
+    let fake_home = TempDir::new().unwrap();
+
+    Command::cargo_bin("pixa")
+        .unwrap()
+        .env("HOME", fake_home.path())
+        .env("SHELL", "/bin/bash")
+        .args(["install", "--skills", "--completions", "--force"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("skill installed"))
+        .stdout(predicate::str::contains("completions installed"));
+}

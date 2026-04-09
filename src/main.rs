@@ -1,23 +1,22 @@
 mod commands;
 
 use anyhow::Result;
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 
-use commands::{compress, convert, detect, favicon, info, install, remove_watermark, split};
+use commands::{
+    completions, compress, convert, detect, favicon, info, install, remove_watermark, split,
+};
 
 const EXAMPLES: &str = "\
 Examples:
-  pixa remove-watermark image.jpg -o clean.jpg
-  pixa remove-watermark ./photos -r -o ./cleaned --if-detected
-  pixa detect image.jpg
-  pixa compress input.png -o output.png -q 80
-  pixa compress ./photos -r -o ./out -q 85
-  pixa convert photo.png photo.webp
-  pixa convert ./photos ./out -r --format webp
-  pixa info photo.jpg
-  pixa favicon logo.png -o ./favicon
+  pixa compress hero.png -o hero.webp --max 1920
   pixa split sheet.png -o ./out --names neutral,happy,thinking,surprised,sad
+  pixa favicon logo.png -o ./favicon
+  pixa convert photo.png photo.webp
+  pixa info photo.jpg
+  pixa remove-watermark image.jpg -o clean.jpg
   pixa install --skills
+  pixa completions zsh > ~/.zfunc/_pixa
 ";
 
 #[derive(Parser)]
@@ -27,7 +26,7 @@ Examples:
     about = "A fast image processing toolkit",
     after_help = EXAMPLES,
 )]
-struct Cli {
+pub struct Cli {
     /// Enable verbose (debug) logging
     #[arg(short, long, global = true)]
     verbose: bool,
@@ -62,6 +61,9 @@ enum Commands {
 
     /// Install integrations (Claude Code skill, etc.)
     Install(install::InstallArgs),
+
+    /// Generate shell completion scripts
+    Completions(completions::CompletionsArgs),
 }
 
 fn main() -> Result<()> {
@@ -87,5 +89,9 @@ fn main() -> Result<()> {
         Commands::Favicon(a) => favicon::run(a),
         Commands::Split(a) => split::run(a),
         Commands::Install(a) => install::run(a),
+        Commands::Completions(a) => {
+            let mut cmd = Cli::command();
+            completions::run(a, &mut cmd)
+        }
     }
 }
