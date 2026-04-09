@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- add shell completion generation ([#7](https://github.com/techarm/pixa/pull/7)) (a669a29)
+
+- add CLAUDE.md project rules + widen banner ([#5](https://github.com/techarm/pixa/pull/5)) (223e11d)
+
 ## [0.1.3] - 2026-04-09
 
 First changelog-tracked release. Includes all features built since v0.1.0.
