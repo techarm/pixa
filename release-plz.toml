@@ -1,0 +1,17 @@
+[workspace]
+# Create a single release PR for the whole workspace (we have one crate).
+# When the PR is merged, release-plz will create a git tag and publish.
+release = true
+git_tag_enable = true
+git_release_enable = false  # cargo-dist creates the GitHub Release, not release-plz
+publish = false             # crates.io publish is still manual for now.
+                            # Set to true + add CARGO_REGISTRY_TOKEN to auto-publish.
+
+[changelog]
+# Generate CHANGELOG.md from conventional commits.
+body = """
+## What's Changed
+{% for commit in commits %}
+  - {{ commit.message }} ({{ commit.id | truncate(length=7, end="") }})\
+{% endfor %}
+"""
