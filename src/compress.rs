@@ -58,10 +58,10 @@ pub fn compress_image(
     let original_size = std::fs::metadata(input)?.len();
     let mut img = image::open(input)?;
 
-    if let Some(limit) = max_edge {
-        if let Some(resized) = resize_to_max_edge(&img, limit) {
-            img = resized;
-        }
+    if let Some(limit) = max_edge
+        && let Some(resized) = resize_to_max_edge(&img, limit)
+    {
+        img = resized;
     }
 
     let ext = output

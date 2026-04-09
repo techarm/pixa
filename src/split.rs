@@ -74,10 +74,7 @@ const EROSION_COMPENSATE: u32 = 3;
 const VISUAL_MARGIN_RATIO: f64 = 0.04;
 
 /// Detect objects in `img` according to `opts`.
-pub fn detect_objects(
-    img: &DynamicImage,
-    opts: &SplitOptions,
-) -> Result<SplitResult, SplitError> {
+pub fn detect_objects(img: &DynamicImage, opts: &SplitOptions) -> Result<SplitResult, SplitError> {
     let (w, h) = img.dimensions();
     if w == 0 || h == 0 {
         return Err(SplitError::NoObjects);
@@ -99,12 +96,11 @@ pub fn detect_objects(
     if let Some(expected) = opts.expected_count {
         if blobs.len() < expected {
             let original = blobs.len();
-            blobs = resplit_to_match(blobs, &col_count, expected).ok_or(
-                SplitError::CountMismatch {
+            blobs =
+                resplit_to_match(blobs, &col_count, expected).ok_or(SplitError::CountMismatch {
                     detected: original,
                     expected,
-                },
-            )?;
+                })?;
             resplit_used = true;
         } else if blobs.len() > expected {
             blobs = merge_to_match(blobs, expected);
@@ -218,7 +214,11 @@ fn estimate_background(img: &image::RgbImage) -> Rgb<u8> {
             }
         }
     }
-    Rgb([median(&mut samples_r), median(&mut samples_g), median(&mut samples_b)])
+    Rgb([
+        median(&mut samples_r),
+        median(&mut samples_g),
+        median(&mut samples_b),
+    ])
 }
 
 fn median(v: &mut [u8]) -> u8 {
@@ -376,10 +376,7 @@ fn resplit_to_match(
 ) -> Option<Vec<(u32, u32)>> {
     while blobs.len() < expected {
         // Pick the widest blob.
-        let (idx, _) = blobs
-            .iter()
-            .enumerate()
-            .max_by_key(|(_, (s, e))| e - s)?;
+        let (idx, _) = blobs.iter().enumerate().max_by_key(|(_, (s, e))| e - s)?;
         let (s, e) = blobs[idx];
         let width = e - s + 1;
         if width < 4 {

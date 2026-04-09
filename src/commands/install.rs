@@ -56,19 +56,23 @@ pub fn run(args: InstallArgs) -> Result<()> {
 
 fn skill_target_path() -> Result<PathBuf> {
     let home = home_dir()?;
-    Ok(home.join(".claude").join("skills").join("pixa").join("SKILL.md"))
+    Ok(home
+        .join(".claude")
+        .join("skills")
+        .join("pixa")
+        .join("SKILL.md"))
 }
 
 fn home_dir() -> Result<PathBuf> {
-    if let Ok(h) = std::env::var("HOME") {
-        if !h.is_empty() {
-            return Ok(PathBuf::from(h));
-        }
+    if let Ok(h) = std::env::var("HOME")
+        && !h.is_empty()
+    {
+        return Ok(PathBuf::from(h));
     }
-    if let Ok(h) = std::env::var("USERPROFILE") {
-        if !h.is_empty() {
-            return Ok(PathBuf::from(h));
-        }
+    if let Ok(h) = std::env::var("USERPROFILE")
+        && !h.is_empty()
+    {
+        return Ok(PathBuf::from(h));
     }
     eprintln!(
         "{} could not determine home directory (HOME / USERPROFILE not set)",

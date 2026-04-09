@@ -37,12 +37,11 @@ fn walk(dir: &Path, recursive: bool, out: &mut Vec<PathBuf>) -> Result<()> {
             if recursive {
                 walk(&p, true, out)?;
             }
-        } else if p.is_file() {
-            if let Some(ext) = p.extension().and_then(|e| e.to_str()) {
-                if IMAGE_EXTS.contains(&ext.to_lowercase().as_str()) {
-                    out.push(p);
-                }
-            }
+        } else if p.is_file()
+            && let Some(ext) = p.extension().and_then(|e| e.to_str())
+            && IMAGE_EXTS.contains(&ext.to_lowercase().as_str())
+        {
+            out.push(p);
         }
     }
     Ok(())
@@ -61,10 +60,10 @@ pub fn mirror_path(input: &Path, input_root: &Path, output_root: Option<&Path>) 
 }
 
 pub fn ensure_parent(path: &Path) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)?;
-        }
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)?;
     }
     Ok(())
 }

@@ -71,7 +71,12 @@ pub fn run(args: ConvertArgs) -> Result<()> {
             }
             Err(e) => {
                 failed += 1;
-                eprintln!("{} {}: {}", fail_mark(), input.display(), red(&e.to_string()));
+                eprintln!(
+                    "{} {}: {}",
+                    fail_mark(),
+                    input.display(),
+                    red(&e.to_string())
+                );
             }
         }
     }
@@ -82,7 +87,11 @@ pub fn run(args: ConvertArgs) -> Result<()> {
         if failed == 0 {
             green(&format!("{success} ok"))
         } else {
-            format!("{}, {}", green(&format!("{success} ok")), red(&format!("{failed} failed")))
+            format!(
+                "{}, {}",
+                green(&format!("{success} ok")),
+                red(&format!("{failed} failed"))
+            )
         }
     );
     Ok(())

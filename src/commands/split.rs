@@ -59,7 +59,6 @@ pub fn run(args: SplitArgs) -> Result<()> {
         } else {
             Some(args.names.len())
         },
-        ..Default::default()
     };
 
     let result = match split::detect_objects(&img, &opts) {
@@ -72,9 +71,7 @@ pub fn run(args: SplitArgs) -> Result<()> {
                 let _ = split::write_preview(&img, &diag, PreviewStyle::Detected, &preview_path);
                 eprintln!("{} {}", fail_mark(), e);
                 eprintln!("  preview written: {}", preview_path.display());
-                eprintln!(
-                    "  hint: try --padding or pass --names to enable re-split"
-                );
+                eprintln!("  hint: try --padding or pass --names to enable re-split");
             } else {
                 eprintln!("{} {}", fail_mark(), e);
             }
@@ -162,7 +159,11 @@ pub fn run(args: SplitArgs) -> Result<()> {
     println!(
         "saved to {} {}",
         green(&args.output.display().to_string()),
-        dim(&format!("({} files, {})", saved_paths.len(), format_size(total_size))),
+        dim(&format!(
+            "({} files, {})",
+            saved_paths.len(),
+            format_size(total_size)
+        )),
     );
     for p in &saved_paths {
         println!("  {} {}", ok_mark(), green(&p.display().to_string()));

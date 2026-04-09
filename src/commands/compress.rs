@@ -104,7 +104,12 @@ fn process_one(input: &Path, output: &Path, max_edge: Option<u32>) -> Result<()>
             Ok(())
         }
         Err(e) => {
-            eprintln!("{} {}: {}", fail_mark(), input.display(), red(&e.to_string()));
+            eprintln!(
+                "{} {}: {}",
+                fail_mark(),
+                input.display(),
+                red(&e.to_string())
+            );
             Err(anyhow::anyhow!(e))
         }
     }

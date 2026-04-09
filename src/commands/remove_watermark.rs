@@ -69,7 +69,14 @@ pub fn run(args: RemoveWatermarkArgs) -> Result<()> {
             mirror_path(input, input_root, args.output.as_deref())
         };
 
-        match process_one(&engine, input, &out_path, size, args.if_detected, args.threshold) {
+        match process_one(
+            &engine,
+            input,
+            &out_path,
+            size,
+            args.if_detected,
+            args.threshold,
+        ) {
             Ok(true) => {
                 ok += 1;
                 println!(
@@ -91,7 +98,12 @@ pub fn run(args: RemoveWatermarkArgs) -> Result<()> {
             }
             Err(e) => {
                 failed += 1;
-                eprintln!("{} {}: {}", fail_mark(), input.display(), red(&e.to_string()));
+                eprintln!(
+                    "{} {}: {}",
+                    fail_mark(),
+                    input.display(),
+                    red(&e.to_string())
+                );
             }
         }
     }

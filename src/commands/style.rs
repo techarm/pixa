@@ -30,8 +30,7 @@ fn color_enabled() -> bool {
         if matches!(std::env::var("TERM").as_deref(), Ok("dumb")) {
             return false;
         }
-        if std::env::var_os("FORCE_COLOR").is_some()
-            || std::env::var_os("CLICOLOR_FORCE").is_some()
+        if std::env::var_os("FORCE_COLOR").is_some() || std::env::var_os("CLICOLOR_FORCE").is_some()
         {
             return true;
         }

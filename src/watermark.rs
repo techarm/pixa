@@ -525,8 +525,7 @@ fn compute_gradient_magnitude(data: &[f32], w: usize, h: usize) -> Vec<f32> {
     for y in 1..h - 1 {
         for x in 1..w - 1 {
             // Sobel Gx
-            let gx = -data[(y - 1) * w + (x - 1)]
-                + data[(y - 1) * w + (x + 1)]
+            let gx = -data[(y - 1) * w + (x - 1)] + data[(y - 1) * w + (x + 1)]
                 - 2.0 * data[y * w + (x - 1)]
                 + 2.0 * data[y * w + (x + 1)]
                 - data[(y + 1) * w + (x - 1)]
@@ -643,11 +642,8 @@ mod tests {
     fn test_sobel_gradient() {
         // Simple 5x5 image with a sharp edge
         let data = vec![
-            0.0, 0.0, 0.0, 0.0, 0.0,
-            0.0, 0.0, 0.0, 0.0, 0.0,
-            0.0, 0.0, 1.0, 1.0, 1.0,
-            0.0, 0.0, 1.0, 1.0, 1.0,
-            0.0, 0.0, 1.0, 1.0, 1.0,
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0,
+            1.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0,
         ];
         let grad = compute_gradient_magnitude(&data, 5, 5);
         // Interior is 3x3, gradient should be non-zero at edges

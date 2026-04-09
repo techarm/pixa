@@ -5,10 +5,10 @@ pub mod info;
 pub mod split;
 pub mod watermark;
 
-pub use compress::{compress_image, CompressResult};
+pub use compress::{CompressResult, compress_image};
 pub use convert::convert_image;
-pub use favicon::{generate_favicon_set, FaviconOptions, FaviconResult};
-pub use info::{get_image_info, ImageInfo};
+pub use favicon::{FaviconOptions, FaviconResult, generate_favicon_set};
+pub use info::{ImageInfo, get_image_info};
 pub use watermark::{DetectionResult, WatermarkEngine, WatermarkSize};
 
 /// Supported image formats

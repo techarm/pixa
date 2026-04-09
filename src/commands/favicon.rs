@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Args;
-use pixa::favicon::{generate_favicon_set, FaviconOptions};
+use pixa::favicon::{FaviconOptions, generate_favicon_set};
 use std::path::PathBuf;
 
 use super::format_size;

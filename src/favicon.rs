@@ -117,8 +117,7 @@ pub fn generate_favicon_set_from_image(
 
     // 2. Generate individual PNG icons
     for &(filename, width, height, purpose) in FAVICON_SPECS {
-        let resized =
-            square.resize_exact(width, height, image::imageops::FilterType::Lanczos3);
+        let resized = square.resize_exact(width, height, image::imageops::FilterType::Lanczos3);
         let png_bytes = encode_and_optimize_png(&resized, opts.png_level)?;
         let path = output_dir.join(filename);
         std::fs::write(&path, &png_bytes)?;
@@ -189,8 +188,7 @@ fn build_multi_resolution_ico(
     // Generate optimized PNG bytes for each size
     let mut png_entries: Vec<(u32, Vec<u8>)> = Vec::new();
     for &size in sizes {
-        let resized =
-            source.resize_exact(size, size, image::imageops::FilterType::Lanczos3);
+        let resized = source.resize_exact(size, size, image::imageops::FilterType::Lanczos3);
         let png_bytes = encode_and_optimize_png(&resized, png_level)?;
         png_entries.push((size, png_bytes));
     }
@@ -326,8 +324,7 @@ mod tests {
     fn test_too_small_image_rejected() {
         let img = test_image(8, 8);
         let dir = tempfile::tempdir().unwrap();
-        let result =
-            generate_favicon_set_from_image(&img, dir.path(), &FaviconOptions::default());
+        let result = generate_favicon_set_from_image(&img, dir.path(), &FaviconOptions::default());
         assert!(matches!(result, Err(FaviconError::TooSmall(8, 8))));
     }
 
