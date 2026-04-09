@@ -155,3 +155,180 @@ fn encode_webp(img: &DynamicImage, quality: u8) -> Result<Vec<u8>, CompressError
     let mem = encoder.encode(quality as f32);
     Ok(mem.to_vec())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use image::{GenericImageView, Rgb, RgbImage};
+    use tempfile::TempDir;
+
+    /// Create a small test image with varying colors (so encoders don't
+    /// collapse it to a trivial-size file).
+    fn test_image(w: u32, h: u32) -> DynamicImage {
+        let mut img = RgbImage::new(w, h);
+        for y in 0..h {
+            for x in 0..w {
+                img.put_pixel(
+                    x,
+                    y,
+                    Rgb([
+                        ((x * 255 / w.max(1)) % 256) as u8,
+                        ((y * 255 / h.max(1)) % 256) as u8,
+                        (((x + y) * 127 / (w + h).max(1)) % 256) as u8,
+                    ]),
+                );
+            }
+        }
+        DynamicImage::ImageRgb8(img)
+    }
+
+    fn write_png(path: &std::path::Path, w: u32, h: u32) {
+        let img = test_image(w, h);
+        img.save(path).expect("write test png");
+    }
+
+    // --- encoder magic-byte sanity ---
+
+    #[test]
+    fn encode_jpeg_produces_jpeg_bytes() {
+        let bytes = encode_jpeg(&test_image(32, 32), 75).unwrap();
+        assert!(bytes.len() > 4, "jpeg bytes should be non-trivial");
+        assert_eq!(&bytes[..3], &[0xFF, 0xD8, 0xFF], "JPEG SOI marker");
+    }
+
+    #[test]
+    fn encode_png_produces_png_bytes() {
+        let bytes = encode_png(&test_image(32, 32), 1).unwrap();
+        assert!(bytes.len() > 8);
+        assert_eq!(
+            &bytes[..8],
+            &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
+            "PNG signature"
+        );
+    }
+
+    #[test]
+    fn encode_webp_produces_webp_bytes() {
+        let bytes = encode_webp(&test_image(32, 32), 80).unwrap();
+        assert!(bytes.len() > 12);
+        assert_eq!(&bytes[..4], b"RIFF", "WebP RIFF header");
+        assert_eq!(&bytes[8..12], b"WEBP", "WebP four-cc");
+    }
+
+    // --- resize ---
+
+    #[test]
+    fn resize_landscape_to_max_edge() {
+        let img = test_image(2560, 1440);
+        let resized = resize_to_max_edge(&img, 1920).expect("should resize");
+        let (w, h) = resized.dimensions();
+        assert_eq!(w, 1920);
+        assert_eq!(h, 1080, "aspect ratio preserved");
+    }
+
+    #[test]
+    fn resize_portrait_to_max_edge() {
+        let img = test_image(1440, 2560);
+        let resized = resize_to_max_edge(&img, 1920).expect("should resize");
+        let (w, h) = resized.dimensions();
+        assert_eq!(w, 1080);
+        assert_eq!(h, 1920);
+    }
+
+    #[test]
+    fn resize_noop_when_under_limit() {
+        let img = test_image(500, 300);
+        assert!(resize_to_max_edge(&img, 1920).is_none());
+    }
+
+    #[test]
+    fn resize_noop_when_exact_limit() {
+        let img = test_image(1920, 1080);
+        assert!(resize_to_max_edge(&img, 1920).is_none());
+    }
+
+    // --- compress_image end-to-end ---
+
+    #[test]
+    fn compress_png_to_webp_roundtrip() {
+        let dir = TempDir::new().unwrap();
+        let input = dir.path().join("in.png");
+        let output = dir.path().join("out.webp");
+        write_png(&input, 256, 256);
+
+        let result = compress_image(&input, &output, None).unwrap();
+        assert!(output.exists());
+        assert!(!result.kept_original);
+        assert!(result.original_size > 0);
+        assert!(result.compressed_size > 0);
+
+        // WebP output should actually be WebP
+        let bytes = std::fs::read(&output).unwrap();
+        assert_eq!(&bytes[..4], b"RIFF");
+        assert_eq!(&bytes[8..12], b"WEBP");
+    }
+
+    #[test]
+    fn compress_png_to_jpeg_via_extension() {
+        let dir = TempDir::new().unwrap();
+        let input = dir.path().join("in.png");
+        let output = dir.path().join("out.jpg");
+        write_png(&input, 200, 200);
+
+        compress_image(&input, &output, None).unwrap();
+        let bytes = std::fs::read(&output).unwrap();
+        assert_eq!(&bytes[..3], &[0xFF, 0xD8, 0xFF], "is JPEG");
+    }
+
+    #[test]
+    fn compress_unsupported_extension_errors() {
+        let dir = TempDir::new().unwrap();
+        let input = dir.path().join("in.png");
+        let output = dir.path().join("out.gif");
+        write_png(&input, 32, 32);
+
+        let err = compress_image(&input, &output, None).unwrap_err();
+        assert!(matches!(err, CompressError::UnsupportedFormat(_)));
+    }
+
+    #[test]
+    fn compress_with_max_edge_resizes() {
+        let dir = TempDir::new().unwrap();
+        let input = dir.path().join("big.png");
+        let output = dir.path().join("small.webp");
+        write_png(&input, 2000, 1000);
+
+        compress_image(&input, &output, Some(800)).unwrap();
+
+        // The WebP output decoded should be <= 800 on the long edge.
+        let decoded = image::open(&output).unwrap();
+        let (w, h) = decoded.dimensions();
+        assert!(w <= 800 && h <= 800, "got {w}x{h}");
+        assert!(w == 800 || h == 800, "one edge should equal the limit");
+    }
+
+    #[test]
+    fn compress_kept_original_when_result_larger() {
+        // Pre-compressed WebP source → re-encoding it as a higher-quality
+        // PNG copy should be larger, so compress_image should fall back
+        // to copying the original bytes.
+        let dir = TempDir::new().unwrap();
+        let input = dir.path().join("minified.webp");
+        let output = dir.path().join("out.webp");
+
+        // Make an already-small WebP (gradient image at quality 10, small)
+        let bytes = encode_webp(&test_image(16, 16), 10).unwrap();
+        std::fs::write(&input, bytes).unwrap();
+
+        let result = compress_image(&input, &output, None).unwrap();
+        // For this tiny input the result may or may not shrink; the
+        // invariant we care about is that the output is never larger
+        // than the original.
+        assert!(result.compressed_size <= result.original_size);
+        if result.kept_original {
+            let orig = std::fs::read(&input).unwrap();
+            let out = std::fs::read(&output).unwrap();
+            assert_eq!(orig, out, "kept_original should copy bytes verbatim");
+        }
+    }
+}

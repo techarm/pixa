@@ -66,3 +66,80 @@ fn save_as_webp(img: &DynamicImage, output: &Path, quality: f32) -> Result<(), C
     std::fs::write(output, &*mem)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use image::{Rgb, RgbImage};
+    use tempfile::TempDir;
+
+    fn write_png(path: &Path, w: u32, h: u32) {
+        let mut img = RgbImage::new(w, h);
+        for y in 0..h {
+            for x in 0..w {
+                img.put_pixel(x, y, Rgb([(x % 256) as u8, (y % 256) as u8, 128]));
+            }
+        }
+        DynamicImage::ImageRgb8(img)
+            .save(path)
+            .expect("write test png");
+    }
+
+    #[test]
+    fn convert_png_to_jpeg() {
+        let dir = TempDir::new().unwrap();
+        let input = dir.path().join("in.png");
+        let output = dir.path().join("out.jpg");
+        write_png(&input, 64, 64);
+
+        convert_image(&input, &output).unwrap();
+        let bytes = std::fs::read(&output).unwrap();
+        assert_eq!(&bytes[..3], &[0xFF, 0xD8, 0xFF], "JPEG magic");
+    }
+
+    #[test]
+    fn convert_png_to_webp() {
+        let dir = TempDir::new().unwrap();
+        let input = dir.path().join("in.png");
+        let output = dir.path().join("out.webp");
+        write_png(&input, 64, 64);
+
+        convert_image(&input, &output).unwrap();
+        let bytes = std::fs::read(&output).unwrap();
+        assert_eq!(&bytes[..4], b"RIFF");
+        assert_eq!(&bytes[8..12], b"WEBP");
+    }
+
+    #[test]
+    fn convert_png_to_png_roundtrip() {
+        let dir = TempDir::new().unwrap();
+        let input = dir.path().join("in.png");
+        let output = dir.path().join("out.png");
+        write_png(&input, 32, 32);
+
+        convert_image(&input, &output).unwrap();
+        let decoded = image::open(&output).unwrap();
+        assert_eq!(decoded.width(), 32);
+        assert_eq!(decoded.height(), 32);
+    }
+
+    #[test]
+    fn convert_unsupported_output_errors() {
+        let dir = TempDir::new().unwrap();
+        let input = dir.path().join("in.png");
+        let output = dir.path().join("out.xyz");
+        write_png(&input, 16, 16);
+
+        let err = convert_image(&input, &output).unwrap_err();
+        assert!(matches!(err, ConvertError::UnsupportedOutput(_)));
+    }
+
+    #[test]
+    fn convert_missing_input_errors() {
+        let dir = TempDir::new().unwrap();
+        let input = dir.path().join("does-not-exist.png");
+        let output = dir.path().join("out.webp");
+
+        assert!(convert_image(&input, &output).is_err());
+    }
+}

@@ -131,3 +131,108 @@ fn format_size(bytes: u64) -> String {
         format!("{:.2} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use image::{DynamicImage, Rgb, RgbImage, Rgba, RgbaImage};
+    use tempfile::TempDir;
+
+    fn write_rgb_png(path: &Path, w: u32, h: u32) {
+        let mut img = RgbImage::new(w, h);
+        for y in 0..h {
+            for x in 0..w {
+                img.put_pixel(x, y, Rgb([(x % 256) as u8, (y % 256) as u8, 64]));
+            }
+        }
+        DynamicImage::ImageRgb8(img).save(path).unwrap();
+    }
+
+    fn write_rgba_png(path: &Path, w: u32, h: u32) {
+        let mut img = RgbaImage::new(w, h);
+        for y in 0..h {
+            for x in 0..w {
+                img.put_pixel(x, y, Rgba([200, 100, 50, 128]));
+            }
+        }
+        DynamicImage::ImageRgba8(img).save(path).unwrap();
+    }
+
+    #[test]
+    fn info_reads_png_dimensions() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("img.png");
+        write_rgb_png(&path, 128, 64);
+
+        let info = get_image_info(&path).unwrap();
+        assert_eq!(info.width, 128);
+        assert_eq!(info.height, 64);
+        assert_eq!(info.pixel_count, 128 * 64);
+    }
+
+    #[test]
+    fn info_reports_file_size() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("img.png");
+        write_rgb_png(&path, 32, 32);
+
+        let info = get_image_info(&path).unwrap();
+        let expected = std::fs::metadata(&path).unwrap().len();
+        assert_eq!(info.file_size, expected);
+        assert!(info.file_size > 0);
+    }
+
+    #[test]
+    fn info_format_is_uppercase() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("img.png");
+        write_rgb_png(&path, 16, 16);
+
+        let info = get_image_info(&path).unwrap();
+        assert_eq!(info.format, "PNG");
+    }
+
+    #[test]
+    fn info_detects_alpha_channel() {
+        let dir = TempDir::new().unwrap();
+        let rgba_path = dir.path().join("rgba.png");
+        let rgb_path = dir.path().join("rgb.png");
+        write_rgba_png(&rgba_path, 16, 16);
+        write_rgb_png(&rgb_path, 16, 16);
+
+        assert!(get_image_info(&rgba_path).unwrap().has_alpha);
+        assert!(!get_image_info(&rgb_path).unwrap().has_alpha);
+    }
+
+    #[test]
+    fn info_sha256_is_deterministic() {
+        let dir = TempDir::new().unwrap();
+        let a = dir.path().join("a.png");
+        let b = dir.path().join("b.png");
+        write_rgb_png(&a, 16, 16);
+        std::fs::copy(&a, &b).unwrap();
+
+        let info_a = get_image_info(&a).unwrap();
+        let info_b = get_image_info(&b).unwrap();
+        assert_eq!(info_a.sha256, info_b.sha256);
+        assert_eq!(info_a.sha256.len(), 64, "SHA-256 hex length");
+    }
+
+    #[test]
+    fn info_file_name_extracted() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("cute-cat.png");
+        write_rgb_png(&path, 16, 16);
+
+        let info = get_image_info(&path).unwrap();
+        assert_eq!(info.file_name, "cute-cat.png");
+    }
+
+    #[test]
+    fn format_size_human_readable() {
+        assert_eq!(format_size(512), "512 B");
+        assert_eq!(format_size(2048), "2.0 KB");
+        assert_eq!(format_size(5 * 1024 * 1024), "5.0 MB");
+        assert_eq!(format_size(2 * 1024 * 1024 * 1024), "2.00 GB");
+    }
+}
