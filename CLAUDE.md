@@ -63,7 +63,7 @@ Releases are **fully automated** via release-plz + cargo-dist:
 ## Testing
 
 ```bash
-make test     # run all tests (62+ currently)
+make test     # run all tests
 ```
 
 - Unit tests live in each `src/*.rs` via `#[cfg(test)]`.
