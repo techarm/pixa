@@ -29,6 +29,7 @@ path = "src/lib.rs"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
+clap_complete = "4"
 image = "0.25"
 oxipng = "9"
 mozjpeg = "0.10"
