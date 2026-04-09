@@ -1,6 +1,6 @@
 [package]
 name = "pixa"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2024"
 license = "MIT"
 description = "Fast image processing CLI: compress, resize, convert, split sheets, generate favicons"
