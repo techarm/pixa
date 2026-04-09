@@ -19,7 +19,7 @@ jobs:
     name: test / ubuntu
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install system dependencies (mozjpeg / libwebp)
         run: |
@@ -31,7 +31,7 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2.8.1
 
       - name: Run full check (fmt + clippy + test)
         run: make check

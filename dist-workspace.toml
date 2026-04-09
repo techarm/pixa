@@ -7,6 +7,10 @@ members = ["cargo:."]
 cargo-dist-version = "0.31.0"
 # CI backends to support
 ci = "github"
+# Do not run any release jobs on pull requests. The separate ci.yml
+# workflow already covers fmt/clippy/test on PRs, so cargo-dist's
+# release workflow should only fire on tag pushes.
+pr-run-mode = "skip"
 # The installers to generate for each app
 installers = ["shell", "powershell", "homebrew"]
 # Target platforms to build apps for (Rust target-triple syntax)
