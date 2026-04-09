@@ -57,7 +57,7 @@ Releases are **fully automated** via release-plz + cargo-dist:
 - `src/commands/*.rs` — CLI wrappers (one per subcommand)
 - `tests/cli_*.rs` — integration tests (one per subcommand)
 - `tests/common/mod.rs` — shared test fixtures
-- `assets/` — embedded files (watermark masks, skill)
+- `assets/` — embedded files (watermark masks, skills)
 - `docs/images/` — README images
 
 ## Testing
