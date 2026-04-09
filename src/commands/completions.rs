@@ -10,6 +10,7 @@ pub struct CompletionsArgs {
 }
 
 pub fn run(args: CompletionsArgs, cmd: &mut clap::Command) -> Result<()> {
-    clap_complete::generate(args.shell, cmd, "pixa", &mut std::io::stdout());
+    let mut out = std::io::stdout().lock();
+    clap_complete::generate(args.shell, cmd, "pixa", &mut out);
     Ok(())
 }

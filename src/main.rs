@@ -89,6 +89,9 @@ fn main() -> Result<()> {
         Commands::Favicon(a) => favicon::run(a),
         Commands::Split(a) => split::run(a),
         Commands::Install(a) => install::run(a),
-        Commands::Completions(a) => completions::run(a, &mut Cli::command()),
+        Commands::Completions(a) => {
+            let mut cmd = Cli::command();
+            completions::run(a, &mut cmd)
+        }
     }
 }
