@@ -10,8 +10,7 @@ publish = true              # auto-publish to crates.io when release PR is merge
 [changelog]
 # Generate CHANGELOG.md from conventional commits.
 body = """
-## What's Changed
 {% for commit in commits %}
-  - {{ commit.message }} ({{ commit.id | truncate(length=7, end="") }})
+- {{ commit.message }} ({{ commit.id | truncate(length=7, end="") }})
 {% endfor %}
 """
