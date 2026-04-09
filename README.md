@@ -108,18 +108,22 @@ The binary lands at `target/release/pixa`. Put it on your `$PATH`:
 cp target/release/pixa ~/.local/bin/   # or anywhere on PATH
 ```
 
-## Use from AI coding agents
+## Setup (one-time)
 
-Claude Code, GitHub Copilot, and other coding agents can call pixa
-automatically once you install the Skill file:
+After installing pixa, run this once to enable shell tab-completion
+and AI coding agent integration:
 
 ```bash
-pixa install --skills
+pixa install --skills --completions
 ```
 
-This drops a Skill at `~/.claude/skills/pixa/SKILL.md` so the agent
-knows when and how to use pixa for image-related requests. Re-run with
-`--force` to update.
+This installs:
+- **Shell completions** — auto-detected (zsh/bash/fish) and placed in
+  the standard directory (same as `brew`-installed tools)
+- **Claude Code skill** — `~/.claude/skills/pixa/SKILL.md` so AI
+  coding agents can call pixa automatically
+
+Re-run with `--force` to update after a pixa upgrade.
 
 ## Quick start
 

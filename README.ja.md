@@ -97,20 +97,19 @@ cargo build --release
 
 バイナリは `target/release/pixa` に出力されます。
 
-## AI コーディングエージェントから使う
+## セットアップ（初回のみ）
 
-Claude Code・GitHub Copilot などのコーディングエージェントから自動で
-pixa を呼び出せるようにするには、Skill ファイルをインストールします:
+インストール後、以下を 1 回実行するとシェル補完と AI エージェント連携が有効になります:
 
 ```bash
-pixa install --skills
+pixa install --skills --completions
 ```
 
-これで `~/.claude/skills/pixa/SKILL.md` が配置され、エージェントが
-「画像を Web 用に最適化して」「アバターをシートから切り出して」など
-のリクエストを受けたときに自動で pixa を使うようになります。
+インストールされるもの:
+- **シェル補完** — zsh/bash/fish を自動検出し、Homebrew と同じ標準ディレクトリに配置
+- **Claude Code skill** — `~/.claude/skills/pixa/SKILL.md` に配置。AI コーディングエージェントが pixa を自動で呼び出せるようになります
 
-更新時は `pixa install --skills --force` で上書きできます。
+pixa のアップグレード後は `--force` を付けて再実行してください。
 
 ## クイックスタート
 
