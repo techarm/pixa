@@ -1,0 +1,48 @@
+name: Release-plz
+
+# Runs on every push to main. release-plz will:
+#   1. Open (or update) a "release PR" that bumps Cargo.toml version
+#      and updates CHANGELOG.md based on conventional commits.
+#   2. When that PR is merged, create a git tag, push it, and publish
+#      to crates.io.
+#
+# The git tag triggers .github/workflows/release.yml (cargo-dist),
+# which builds prebuilt binaries, updates the Homebrew tap, and
+# creates the GitHub Release.
+#
+# IMPORTANT: We use RELEASE_PLZ_TOKEN (a fine-grained PAT) instead of
+# the default GITHUB_TOKEN because tags pushed by GITHUB_TOKEN do NOT
+# trigger other workflows (GitHub prevents recursive triggers). The PAT
+# ensures the tag push fires cargo-dist's release.yml.
+
+on:
+  push:
+    branches: [main]
+
+# Prevent overlapping release-plz runs when multiple pushes land on
+# main in quick succession (e.g. back-to-back PR merges).
+concurrency:
+  group: release-plz
+  cancel-in-progress: false  # let the running release finish
+
+permissions:
+  pull-requests: write
+  contents: write
+
+jobs:
+  release-plz:
+    name: release-plz
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_PLZ_TOKEN }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Run release-plz
+        uses: release-plz/action@v0.5
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
