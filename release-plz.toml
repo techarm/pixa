@@ -4,8 +4,7 @@
 release = true
 git_tag_enable = true
 git_release_enable = false  # cargo-dist creates the GitHub Release, not release-plz
-publish = false             # crates.io publish is still manual for now.
-                            # Set to true + add CARGO_REGISTRY_TOKEN to auto-publish.
+publish = true              # auto-publish to crates.io when release PR is merged
 
 [changelog]
 # Generate CHANGELOG.md from conventional commits.
