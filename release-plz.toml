@@ -7,10 +7,7 @@ git_tag_enable = true
 git_release_enable = false  # cargo-dist creates the GitHub Release, not release-plz
 publish = true              # auto-publish to crates.io when release PR is merged
 
-[changelog]
-# Generate CHANGELOG.md from conventional commits.
-body = """
-{% for commit in commits %}
-- {{ commit.message }} ({{ commit.id | truncate(length=7, end="") }})
-{% endfor %}
-"""
+# Use release-plz's default changelog generation (powered by git-cliff).
+# No custom [changelog] template — the default correctly creates
+# ## [version] - date section headers, which our custom template was
+# breaking (putting entries under [Unreleased] without a version header).
