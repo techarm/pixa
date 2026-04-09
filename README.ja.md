@@ -1,11 +1,19 @@
 # pixa 🖼️
 
-[![Crates.io](https://img.shields.io/crates/v/pixa.svg)](https://crates.io/crates/pixa)
-[![Downloads](https://img.shields.io/crates/d/pixa.svg)](https://crates.io/crates/pixa)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![CI](https://github.com/techarm/pixa/actions/workflows/release.yml/badge.svg)](https://github.com/techarm/pixa/actions/workflows/release.yml)
+<p align="center">
+  <img src="docs/images/hero.webp" alt="pixa — 高速画像処理 CLI" width="640">
+</p>
 
-[English](README.md) | [日本語](README.ja.md)
+<p align="center">
+  <a href="https://crates.io/crates/pixa"><img src="https://img.shields.io/crates/v/pixa.svg" alt="Crates.io"></a>
+  <a href="https://crates.io/crates/pixa"><img src="https://img.shields.io/crates/d/pixa.svg" alt="Downloads"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+  <a href="https://github.com/techarm/pixa/actions/workflows/release.yml"><img src="https://github.com/techarm/pixa/actions/workflows/release.yml/badge.svg" alt="CI"></a>
+</p>
+
+<p align="center">
+  <a href="README.md">English</a> | <a href="README.ja.md">日本語</a>
+</p>
 
 Rust 製の高速画像処理 CLI ツールキット。AI 生成画像を Web 配信向けに最適化したり、シート画像を分割したり、Gemini の透かしを除去したりするための実用ツール集。
 
@@ -128,15 +136,36 @@ pixa compress big.png -o thumb.webp --max 400    # サムネイル
 
 ### シート画像の自動分割
 
+入力 — 1 枚のスプライトシート:
+
+<p align="center">
+  <img src="docs/images/split-foxes.webp" alt="入力: 5 体のキャラが同一背景に並んだシート画像" width="640">
+</p>
+
+1 コマンドで実行:
+
 ```bash
-# 表情シートから 5 体のアバターを切り出し
-pixa split hayate-expressions.png -o ./avatars \
-  --names neutral,happy,thinking,surprised,sad
+pixa split foxes.png -o ./avatars \
+  --names neutral,happy,thinking,surprised,sleepy
 ```
 
-- 背景色を自動検出
-- 各キャラの自然な bbox を検出（テキストラベルは自動除外）
-- 出力 PNG はすべて同じサイズに揃えて背景色でパディング
+出力 — 5 体のアバター画像。テキストラベルは自動で除外、すべて同じ
+サイズにパディングされるので UI コンポーネントにそのまま投入できます:
+
+<p align="center">
+  <img src="docs/images/split-foxes-output/neutral.webp" alt="neutral" width="110">
+  <img src="docs/images/split-foxes-output/happy.webp" alt="happy" width="110">
+  <img src="docs/images/split-foxes-output/thinking.webp" alt="thinking" width="110">
+  <img src="docs/images/split-foxes-output/surprised.webp" alt="surprised" width="110">
+  <img src="docs/images/split-foxes-output/sleepy.webp" alt="sleepy" width="110">
+</p>
+
+仕組み:
+
+- 背景色を四隅サンプルから自動検出
+- 各オブジェクトの bbox を検出（テキストラベルは自動除外）
+- 出力は全て同じサイズに揃えて背景色でパディング（そのまま UI 配置可）
+- `--names` で個数を指定すれば、隣接/不均等なキャラも再分割して対応
 - `--preview` で検出枠を可視化（`--preview-style detected|output|both`）
 
 ### Favicon

@@ -1,11 +1,19 @@
 # pixa 🖼️
 
-[![Crates.io](https://img.shields.io/crates/v/pixa.svg)](https://crates.io/crates/pixa)
-[![Downloads](https://img.shields.io/crates/d/pixa.svg)](https://crates.io/crates/pixa)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![CI](https://github.com/techarm/pixa/actions/workflows/release.yml/badge.svg)](https://github.com/techarm/pixa/actions/workflows/release.yml)
+<p align="center">
+  <img src="docs/images/hero.webp" alt="pixa — fast image processing CLI" width="640">
+</p>
 
-[English](README.md) | [日本語](README.ja.md)
+<p align="center">
+  <a href="https://crates.io/crates/pixa"><img src="https://img.shields.io/crates/v/pixa.svg" alt="Crates.io"></a>
+  <a href="https://crates.io/crates/pixa"><img src="https://img.shields.io/crates/d/pixa.svg" alt="Downloads"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+  <a href="https://github.com/techarm/pixa/actions/workflows/release.yml"><img src="https://github.com/techarm/pixa/actions/workflows/release.yml/badge.svg" alt="CI"></a>
+</p>
+
+<p align="center">
+  <a href="README.md">English</a> | <a href="README.ja.md">日本語</a>
+</p>
 
 A fast Rust image processing CLI — optimize AI-generated images for the
 web in one command, split sprite/expression sheets into individual
@@ -143,11 +151,31 @@ original bytes are written to the destination instead.
 
 ### Split a sheet image into individual files
 
+Input — a single sprite sheet:
+
+<p align="center">
+  <img src="docs/images/split-foxes.webp" alt="Input: 5 fox characters on a single background" width="640">
+</p>
+
+One command:
+
 ```bash
-pixa split hayate-expressions.png -o ./avatars \
-  --names neutral,happy,thinking,surprised,sad
+pixa split foxes.png -o ./avatars \
+  --names neutral,happy,thinking,surprised,sleepy
 ```
 
+Output — 5 individual avatars, text labels automatically excluded, all
+padded to the same size so they drop straight into UI components:
+
+<p align="center">
+  <img src="docs/images/split-foxes-output/neutral.webp" alt="neutral" width="110">
+  <img src="docs/images/split-foxes-output/happy.webp" alt="happy" width="110">
+  <img src="docs/images/split-foxes-output/thinking.webp" alt="thinking" width="110">
+  <img src="docs/images/split-foxes-output/surprised.webp" alt="surprised" width="110">
+  <img src="docs/images/split-foxes-output/sleepy.webp" alt="sleepy" width="110">
+</p>
+
+How it works:
 - Background color is auto-detected from corner samples
 - Each object's bounding box is detected; text labels printed below
   characters are excluded automatically
