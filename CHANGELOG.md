@@ -6,18 +6,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-## What's Changed
 
-- add CLI integration tests ([#1](https://github.com/techarm/pixa/pull/1)) (9aa2770)
+## [0.1.3] - 2026-04-09
 
-- add GitHub Actions workflow for fmt, clippy, and tests (7eb6020)
+First changelog-tracked release. Includes all features built since v0.1.0.
 
-- add unit tests for compress, convert, and info modules (c031722)
+### Features
 
-- brand palette with truecolor, rename assets, fix README (2a16767)
+- **compress** — one-command web optimization: resize + format convert + compress with `--max` flag. Auto-naming (`photo.min.jpg`) when `-o` is omitted. Keeps original if compressed size is larger.
+- **split** — auto-detect and crop individual objects from a sprite/expression sheet. Background color detection, text label exclusion, uniform output sizing with background-color padding, preview with `--preview-style detected|output|both`.
+- **favicon** — generate a complete web-ready icon set (ICO multi-res + 5 PNG sizes + HTML snippet) from any image.
+- **remove-watermark** — remove Gemini AI watermarks via Reverse Alpha Blending. `--if-detected` flag to skip clean images.
+- **detect** — score whether a Gemini watermark is present.
+- **convert** — convert between JPEG, PNG, WebP, BMP, GIF, TIFF.
+- **info** — show dimensions, color, EXIF, SHA-256 metadata. `--json` for machine-readable output.
+- **install --skills** — install a Claude Code skill so coding agents can use pixa automatically.
+- **Brand palette** — all CLI output uses a fixed 24-bit truecolor palette (sage/coral/teal/amber) for consistent appearance across terminal themes. Respects `NO_COLOR` and `FORCE_COLOR`.
 
-- add hero image and split demo showcase to README (df96746)
+### Testing & CI
 
-- shorten crate description to fit Homebrew line limit (ea146a4)
+- 62 tests total: 41 unit tests + 21 CLI integration tests via `assert_cmd`.
+- GitHub Actions CI on every push/PR: `make check` (fmt + clippy + test).
+- Makefile with `check`, `build`, `release`, and other common targets.
 
-- add Homebrew install path and move Installation section up (8558b39)
+### Distribution
+
+- **Homebrew**: `brew tap techarm/tap && brew install pixa`
+- **Prebuilt binaries**: macOS (Intel + Apple Silicon), Linux (x86_64 + ARM64), Windows (x86_64) via cargo-dist.
+- **Shell / PowerShell installers**: one-line install scripts in GitHub Releases.
+- **crates.io**: `cargo install pixa`
+- **Claude Code skill**: `pixa install --skills`
+
+### Release automation
+
+- **release-plz**: auto-generates release PRs with version bump + CHANGELOG on every push to main.
+- **cargo-dist**: builds cross-platform binaries + updates Homebrew tap on every tag push.
+- Fully automated pipeline: merge release PR → tag → binaries → Homebrew → crates.io.
