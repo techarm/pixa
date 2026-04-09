@@ -19,6 +19,12 @@ on:
   push:
     branches: [main]
 
+# Prevent overlapping release-plz runs when multiple pushes land on
+# main in quick succession (e.g. back-to-back PR merges).
+concurrency:
+  group: release-plz
+  cancel-in-progress: false  # let the running release finish
+
 permissions:
   pull-requests: write
   contents: write
