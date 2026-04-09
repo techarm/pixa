@@ -88,8 +88,15 @@ fn install_completions(force: bool) -> Result<()> {
     let mut cmd = crate::Cli::command();
     let mut buf = Vec::new();
     clap_complete::generate(shell, &mut cmd, "pixa", &mut buf);
-    std::fs::write(&target, buf)
-        .with_context(|| format!("Failed to write {}", target.display()))?;
+    std::fs::write(&target, &buf).with_context(|| {
+        format!(
+            "Failed to write {}. \
+             If the path is not writable, generate manually with: \
+             pixa completions {} > <your-path>",
+            target.display(),
+            shell
+        )
+    })?;
 
     println!(
         "{} {} completions installed to {}",
