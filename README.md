@@ -1,7 +1,7 @@
 # pixa 🖼️
 
 <p align="center">
-  <img src="docs/images/hero.webp" alt="pixa — fast image processing CLI" width="640">
+  <img src="docs/images/banner.webp" alt="pixa — fast image processing CLI" width="640">
 </p>
 
 <p align="center">
@@ -108,6 +108,7 @@ The binary lands at `target/release/pixa`. Put it on your `$PATH`:
 cp target/release/pixa ~/.local/bin/   # or anywhere on PATH
 ```
 
+## Use from AI coding agents
 
 Claude Code, GitHub Copilot, and other coding agents can call pixa
 automatically once you install the Skill file:
@@ -120,19 +121,22 @@ This drops a Skill at `~/.claude/skills/pixa/SKILL.md` so the agent
 knows when and how to use pixa for image-related requests. Re-run with
 `--force` to update.
 
-## Use from AI coding agents
 ## Quick start
 
 ### Web-optimize an AI-generated image (one command)
 
 ```bash
-# 4K PNG → 1920px WebP (resize + format convert + compress)
-pixa compress hero-4k.png -o hero.webp --max 1920
-# 6.8 MB → 82.7 KB (-98.8%)
+# Source PNG → 1920px WebP (resize + format convert + compress)
+pixa compress docs/images/hero.png \
+  -o hero.webp --max 1920
+# ✓ docs/images/hero.png → hero.webp
+#   6.3 MB → 145.0 KB  -97.7%
 ```
 
 `--max` is the longest edge in pixels. Aspect ratio is preserved, and
-the same flag works for both landscape and portrait inputs.
+the same flag works for both landscape and portrait inputs. You can
+reproduce the numbers above against `docs/images/hero.png`,
+which is kept in this repo as evidence.
 
 ### Compress
 
@@ -154,7 +158,7 @@ original bytes are written to the destination instead.
 Input — a single sprite sheet:
 
 <p align="center">
-  <img src="docs/images/split-foxes.webp" alt="Input: 5 fox characters on a single background" width="640">
+  <img src="docs/images/foxes.webp" alt="Input: 5 fox characters on a single background" width="640">
 </p>
 
 One command:
@@ -168,11 +172,18 @@ Output — 5 individual avatars, text labels automatically excluded, all
 padded to the same size so they drop straight into UI components:
 
 <p align="center">
-  <img src="docs/images/split-foxes-output/neutral.webp" alt="neutral" width="110">
-  <img src="docs/images/split-foxes-output/happy.webp" alt="happy" width="110">
-  <img src="docs/images/split-foxes-output/thinking.webp" alt="thinking" width="110">
-  <img src="docs/images/split-foxes-output/surprised.webp" alt="surprised" width="110">
-  <img src="docs/images/split-foxes-output/sleepy.webp" alt="sleepy" width="110">
+  <img src="docs/images/foxes-output/neutral.webp" alt="neutral" width="110">
+  <img src="docs/images/foxes-output/happy.webp" alt="happy" width="110">
+  <img src="docs/images/foxes-output/thinking.webp" alt="thinking" width="110">
+  <img src="docs/images/foxes-output/surprised.webp" alt="surprised" width="110">
+  <img src="docs/images/foxes-output/sleepy.webp" alt="sleepy" width="110">
+</p>
+
+Add `--preview` to see exactly what pixa detected — each box shows the
+uniform frame the crops were centered on:
+
+<p align="center">
+  <img src="docs/images/foxes-preview.webp" alt="Detection preview with colored boxes" width="640">
 </p>
 
 How it works:

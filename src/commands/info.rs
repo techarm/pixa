@@ -3,7 +3,7 @@ use clap::Args;
 use pixa::info::get_image_info;
 use std::path::PathBuf;
 
-use super::style::{bold, cyan, dim};
+use super::style::{bold, cyan, dim, green, red};
 
 #[derive(Args)]
 pub struct InfoArgs {
@@ -22,12 +22,12 @@ pub fn run(args: InfoArgs) -> Result<()> {
     }
 
     let label = |s: &str| dim(&format!("{s:<11}"));
-    println!("{}{}", label("File"), bold(&info.file_name));
-    println!("{}{}", label("Format"), info.format);
+    println!("{}{}", label("File"), green(&info.file_name));
+    println!("{}{}", label("Format"), cyan(&info.format));
     println!(
         "{}{} {}",
         label("Size"),
-        info.file_size_human,
+        red(&info.file_size_human),
         dim(&format!("({} bytes)", info.file_size))
     );
     println!(
@@ -35,7 +35,7 @@ pub fn run(args: InfoArgs) -> Result<()> {
         label("Dimensions"),
         cyan(&format!("{}×{}", info.width, info.height))
     );
-    println!("{}{}", label("Pixels"), info.pixel_count);
+    println!("{}{}", label("Pixels"), red(&info.pixel_count.to_string()));
     println!("{}{}", label("Color"), info.color_type);
     println!("{}{}-bit", label("Depth"), info.bit_depth);
     println!(

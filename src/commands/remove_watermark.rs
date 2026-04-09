@@ -75,14 +75,19 @@ pub fn run(args: RemoveWatermarkArgs) -> Result<()> {
                 println!(
                     "{} {} {} {}",
                     ok_mark(),
-                    input.display(),
+                    green(&input.display().to_string()),
                     arrow(),
                     dim(&out_path.display().to_string())
                 );
             }
             Ok(false) => {
                 skipped += 1;
-                println!("{} {} {}", skip_mark(), input.display(), dim("(no watermark)"));
+                println!(
+                    "{} {} {}",
+                    skip_mark(),
+                    green(&input.display().to_string()),
+                    dim("(no watermark)")
+                );
             }
             Err(e) => {
                 failed += 1;

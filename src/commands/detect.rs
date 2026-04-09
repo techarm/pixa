@@ -3,7 +3,7 @@ use clap::Args;
 use pixa::watermark::WatermarkEngine;
 use std::path::PathBuf;
 
-use super::style::{bold, dim, fail_mark, green, ok_mark, red};
+use super::style::{dim, fail_mark, green, ok_mark, red};
 
 #[derive(Args)]
 pub struct DetectArgs {
@@ -34,7 +34,7 @@ pub fn run(args: DetectArgs) -> Result<()> {
     println!(
         "{} {} {} {} {}",
         mark,
-        bold(&args.input.display().to_string()),
+        green(&args.input.display().to_string()),
         dim("·"),
         status,
         dim(&format!("({pct:.1}%)"))

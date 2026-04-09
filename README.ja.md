@@ -1,7 +1,7 @@
 # pixa 🖼️
 
 <p align="center">
-  <img src="docs/images/hero.webp" alt="pixa — 高速画像処理 CLI" width="640">
+  <img src="docs/images/banner.webp" alt="pixa — 高速画像処理 CLI" width="640">
 </p>
 
 <p align="center">
@@ -117,10 +117,15 @@ pixa install --skills
 ### AI 画像を Web 用に最適化（一発）
 
 ```bash
-# 4K PNG → 1920px WebP（リサイズ + 変換 + 圧縮）
-pixa compress hero-4k.png -o hero.webp --max 1920
-# 6.8 MB → 82.7 KB (-98.8%)
+# 元 PNG → 1920px WebP（リサイズ + 変換 + 圧縮）
+pixa compress docs/images/hero.png \
+  -o hero.webp --max 1920
+# ✓ docs/images/hero.png → hero.webp
+#   6.3 MB → 145.0 KB  -97.7%
 ```
+
+`docs/images/hero.png` はリポジトリに含まれる実際の画像
+なので、上記の数字はそのまま再現できます。
 
 ### 圧縮
 
@@ -139,7 +144,7 @@ pixa compress big.png -o thumb.webp --max 400    # サムネイル
 入力 — 1 枚のスプライトシート:
 
 <p align="center">
-  <img src="docs/images/split-foxes.webp" alt="入力: 5 体のキャラが同一背景に並んだシート画像" width="640">
+  <img src="docs/images/foxes.webp" alt="入力: 5 体のキャラが同一背景に並んだシート画像" width="640">
 </p>
 
 1 コマンドで実行:
@@ -153,11 +158,18 @@ pixa split foxes.png -o ./avatars \
 サイズにパディングされるので UI コンポーネントにそのまま投入できます:
 
 <p align="center">
-  <img src="docs/images/split-foxes-output/neutral.webp" alt="neutral" width="110">
-  <img src="docs/images/split-foxes-output/happy.webp" alt="happy" width="110">
-  <img src="docs/images/split-foxes-output/thinking.webp" alt="thinking" width="110">
-  <img src="docs/images/split-foxes-output/surprised.webp" alt="surprised" width="110">
-  <img src="docs/images/split-foxes-output/sleepy.webp" alt="sleepy" width="110">
+  <img src="docs/images/foxes-output/neutral.webp" alt="neutral" width="110">
+  <img src="docs/images/foxes-output/happy.webp" alt="happy" width="110">
+  <img src="docs/images/foxes-output/thinking.webp" alt="thinking" width="110">
+  <img src="docs/images/foxes-output/surprised.webp" alt="surprised" width="110">
+  <img src="docs/images/foxes-output/sleepy.webp" alt="sleepy" width="110">
+</p>
+
+`--preview` を付けると pixa が実際に検出した範囲を可視化できます。色付き
+枠は統一サイズの出力フレームで、その中心に元の bbox が配置されます:
+
+<p align="center">
+  <img src="docs/images/foxes-preview.webp" alt="検出枠つきプレビュー画像" width="640">
 </p>
 
 仕組み:

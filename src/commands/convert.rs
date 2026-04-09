@@ -34,9 +34,9 @@ pub fn run(args: ConvertArgs) -> Result<()> {
         println!(
             "{} {} {} {}",
             ok_mark(),
-            bold(&inputs[0].display().to_string()),
+            green(&inputs[0].display().to_string()),
             arrow(),
-            bold(&args.output.display().to_string()),
+            args.output.display(),
         );
         return Ok(());
     }
@@ -64,7 +64,7 @@ pub fn run(args: ConvertArgs) -> Result<()> {
                 println!(
                     "{} {} {} {}",
                     ok_mark(),
-                    input.display(),
+                    green(&input.display().to_string()),
                     arrow(),
                     dim(&out_path.display().to_string())
                 );

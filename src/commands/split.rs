@@ -3,7 +3,7 @@ use clap::{Args, ValueEnum};
 use pixa::split::{self, PreviewStyle, SplitOptions};
 use std::path::PathBuf;
 
-use super::style::{arrow, bold, cyan, dim, fail_mark, ok_mark};
+use super::style::{arrow, cyan, dim, fail_mark, green, ok_mark, red};
 use super::{ensure_parent, format_size};
 
 #[derive(Args)]
@@ -92,11 +92,11 @@ pub fn run(args: SplitArgs) -> Result<()> {
         println!(
             "{} detected    {} {}",
             ok_mark(),
-            bold(&format!("{count}")),
+            red(&format!("{count}")),
             dim("(re-split to match --names)")
         );
     } else {
-        println!("{} detected    {}", ok_mark(), bold(&format!("{count}")));
+        println!("{} detected    {}", ok_mark(), red(&format!("{count}")));
     }
     println!();
 
@@ -126,16 +126,17 @@ pub fn run(args: SplitArgs) -> Result<()> {
             String::new()
         };
         println!(
-            "  {bold}{pad}  {coord}  detected {:>9}  {}",
-            dim(&detected),
+            "  {name_col}{pad}  {coord_col}  detected {:>9}  {}",
+            red(&detected),
             marker,
-            bold = bold(name),
+            name_col = green(name),
+            coord_col = dim(&coord),
         );
     }
     println!(
         "\n{} all outputs padded to {}",
         dim("output size:"),
-        bold(&format!("{max_w}×{max_h}"))
+        red(&format!("{max_w}×{max_h}"))
     );
     println!();
 
@@ -160,11 +161,11 @@ pub fn run(args: SplitArgs) -> Result<()> {
 
     println!(
         "saved to {} {}",
-        bold(&args.output.display().to_string()),
+        green(&args.output.display().to_string()),
         dim(&format!("({} files, {})", saved_paths.len(), format_size(total_size))),
     );
     for p in &saved_paths {
-        println!("  {} {}", ok_mark(), p.display());
+        println!("  {} {}", ok_mark(), green(&p.display().to_string()));
     }
 
     if args.preview {

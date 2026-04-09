@@ -88,10 +88,10 @@ pub fn run(args: CompressArgs) -> Result<()> {
         println!(
             "{} {} {} {}  {}",
             dim("total"),
-            format_size(total_orig),
+            red(&format_size(total_orig)),
             arrow(),
-            format_size(total_comp),
-            green(&format!("-{pct:.1}%")),
+            red(&format_size(total_comp)),
+            red(&format!("-{pct:.1}%")),
         );
     }
     Ok(())
@@ -115,23 +115,23 @@ fn print_line(input: &Path, output: &Path, r: &pixa::compress::CompressResult) {
         println!(
             "{} {} {} {}  {}  {}",
             skip_mark(),
-            input.display(),
+            green(&input.display().to_string()),
             arrow(),
             output.display(),
-            format_size(r.original_size),
+            red(&format_size(r.original_size)),
             dim("(already optimal, kept original)"),
         );
     } else {
         println!(
             "{} {} {} {}  {} {} {}  {}",
             ok_mark(),
-            bold(&input.display().to_string()),
+            green(&input.display().to_string()),
             arrow(),
-            bold(&output.display().to_string()),
-            format_size(r.original_size),
+            output.display(),
+            red(&format_size(r.original_size)),
             arrow(),
-            format_size(r.compressed_size),
-            green(&format!("-{:.1}%", r.savings_percent)),
+            red(&format_size(r.compressed_size)),
+            red(&format!("-{:.1}%", r.savings_percent)),
         );
     }
 }

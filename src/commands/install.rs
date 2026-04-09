@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use clap::Args;
 use std::path::PathBuf;
 
-use super::style::{bold, dim, fail_mark, ok_mark, yellow};
+use super::style::{dim, fail_mark, green, ok_mark, yellow};
 
 /// Embedded SKILL.md content. Bundled into the binary at compile time
 /// so `pixa install --skills` works without any external files.
@@ -29,7 +29,7 @@ pub fn run(args: InstallArgs) -> Result<()> {
         eprintln!(
             "{} already installed at {}",
             yellow("!"),
-            bold(&target.display().to_string())
+            green(&target.display().to_string())
         );
         eprintln!("  re-run with --force to overwrite");
         return Ok(());
@@ -45,7 +45,7 @@ pub fn run(args: InstallArgs) -> Result<()> {
     println!(
         "{} skill installed to {}",
         ok_mark(),
-        bold(&target.display().to_string())
+        green(&target.display().to_string())
     );
     println!(
         "  {}",
