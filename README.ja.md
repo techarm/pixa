@@ -1,7 +1,7 @@
 # pixa 🖼️
 
 <p align="center">
-  <img src="docs/images/banner.webp" alt="pixa — 高速画像処理 CLI" width="640">
+  <img src="docs/images/banner.webp" alt="pixa — 高速画像処理 CLI" width="800">
 </p>
 
 <p align="center">
