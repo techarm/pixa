@@ -1,6 +1,6 @@
 [package]
 name = "pixa"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 license = "MIT"
 description = "Fast image processing CLI: compress, resize, convert, split sprite sheets, generate favicons, and remove Gemini AI watermarks. One command for AI-image-to-web optimization."
