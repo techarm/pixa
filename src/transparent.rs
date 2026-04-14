@@ -59,6 +59,13 @@ pub struct TransparentOptions {
     /// decontamination via color-to-alpha; pixels beyond this ring are
     /// treated as fully opaque. Default: 90.0.
     pub edge_width: f64,
+    /// Spatial radius (in pixels) for a spill-suppression band around
+    /// the flooded background region. Pixels in this band are not
+    /// flooded (their RGB distance from bg is beyond `edge_width`), but
+    /// they sit close enough to the flood boundary to be AA
+    /// contamination. They stay fully opaque but get background-colour
+    /// spill removed. Set to 0 to disable. Default: 3.
+    pub spill_radius: u32,
 }
 
 impl Default for TransparentOptions {
@@ -67,6 +74,7 @@ impl Default for TransparentOptions {
             background: None,
             tolerance: 12.0,
             edge_width: 90.0,
+            spill_radius: 3,
         }
     }
 }
@@ -150,7 +158,13 @@ pub fn apply_transparency(
     let bg = opts.background.unwrap_or_else(|| estimate_background(&rgb));
 
     let mut out = img.to_rgba8();
-    apply_transparency_to_rgba(&mut out, bg, opts.tolerance, opts.edge_width);
+    apply_transparency_to_rgba(
+        &mut out,
+        bg,
+        opts.tolerance,
+        opts.edge_width,
+        opts.spill_radius,
+    );
 
     let mut transparent_pixels = 0u64;
     let mut edge_pixels = 0u64;
@@ -181,6 +195,7 @@ pub fn apply_transparency_to_rgba(
     background: [u8; 3],
     tolerance: f64,
     edge_width: f64,
+    spill_radius: u32,
 ) {
     let (w, h) = (img.width(), img.height());
     if w == 0 || h == 0 {
@@ -247,6 +262,53 @@ pub fn apply_transparency_to_rgba(
         }
     }
 
+    // Pass 2b: morphological dilation band — pixels within
+    // `spill_radius` of a flooded pixel that are NOT themselves
+    // flooded. These are typically AA-contamination pixels whose RGB
+    // distance from bg falls just outside the flood reach; they will
+    // get colour-decontaminated but remain fully opaque.
+    let mut in_spill_band = vec![false; n];
+    if spill_radius > 0 {
+        // BFS outward from flooded boundary for up to `spill_radius` steps.
+        // Use a `dist_from_flood` buffer so we don't enqueue any pixel
+        // more than once.
+        let mut dist_from_flood = vec![u32::MAX; n];
+        let mut bfs: VecDeque<(u32, u32)> = VecDeque::new();
+        for y in 0..h {
+            for x in 0..w {
+                let i = (y as usize) * (w as usize) + (x as usize);
+                if flooded[i] {
+                    dist_from_flood[i] = 0;
+                    bfs.push_back((x, y));
+                }
+            }
+        }
+        while let Some((x, y)) = bfs.pop_front() {
+            let i = (y as usize) * (w as usize) + (x as usize);
+            let d_here = dist_from_flood[i];
+            if d_here >= spill_radius {
+                continue;
+            }
+            let nbrs: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+            for (dx, dy) in nbrs {
+                let nx = x as i32 + dx;
+                let ny = y as i32 + dy;
+                if nx < 0 || ny < 0 || nx >= w as i32 || ny >= h as i32 {
+                    continue;
+                }
+                let ni = (ny as usize) * (w as usize) + (nx as usize);
+                if flooded[ni] {
+                    continue;
+                }
+                if dist_from_flood[ni] > d_here + 1 {
+                    dist_from_flood[ni] = d_here + 1;
+                    in_spill_band[ni] = true;
+                    bfs.push_back((nx as u32, ny as u32));
+                }
+            }
+        }
+    }
+
     // Pass 3: classify and write each pixel.
     //
     // Denominator clamp for color-to-alpha: when bg has a near-extreme
@@ -263,7 +325,7 @@ pub fn apply_transparency_to_rgba(
                 continue;
             }
 
-            if !flooded[i] {
+            if !flooded[i] && !in_spill_band[i] {
                 // Interior pixel (not connected to corner bg): pass
                 // through unchanged, even if its RGB happens to be
                 // close to the key colour.
@@ -273,14 +335,15 @@ pub fn apply_transparency_to_rgba(
             }
 
             let d = dist[i];
-            if d <= tolerance {
+            if flooded[i] && d <= tolerance {
                 *p = image::Rgba([0, 0, 0, 0]);
                 continue;
             }
 
-            // Flooded, in edge ring → color-to-alpha.
+            // Flooded+in edge ring OR spill band: compute the natural
+            // color-to-alpha alpha first.
             let obs = [p[0] as f64, p[1] as f64, p[2] as f64];
-            let mut alpha_f: f64 = 0.0;
+            let mut alpha_natural: f64 = 0.0;
             for c in 0..3 {
                 let a = if obs[c] > bg[c] {
                     let denom = (255.0 - bg[c]).max(MIN_DENOM);
@@ -291,25 +354,36 @@ pub fn apply_transparency_to_rgba(
                 } else {
                     0.0
                 };
-                if a > alpha_f {
-                    alpha_f = a;
+                if a > alpha_natural {
+                    alpha_natural = a;
                 }
             }
-            alpha_f = alpha_f.clamp(0.0, 1.0) * src_alpha;
+            alpha_natural = alpha_natural.clamp(0.0, 1.0);
 
-            if alpha_f <= 0.0 {
+            if alpha_natural <= 0.0 {
                 *p = image::Rgba([0, 0, 0, 0]);
                 continue;
             }
 
-            let one_minus_a = 1.0 - alpha_f;
-            let fr = (obs[0] - one_minus_a * bg[0]) / alpha_f;
-            let fg = (obs[1] - one_minus_a * bg[1]) / alpha_f;
-            let fb = (obs[2] - one_minus_a * bg[2]) / alpha_f;
+            // Decontaminate using the *natural* alpha so the math
+            // actually subtracts a meaningful amount of bg.
+            let one_minus_a = 1.0 - alpha_natural;
+            let fr = (obs[0] - one_minus_a * bg[0]) / alpha_natural;
+            let fg = (obs[1] - one_minus_a * bg[1]) / alpha_natural;
+            let fb = (obs[2] - one_minus_a * bg[2]) / alpha_natural;
             let r = fr.clamp(0.0, 255.0).round() as u8;
             let g = fg.clamp(0.0, 255.0).round() as u8;
             let b = fb.clamp(0.0, 255.0).round() as u8;
-            let alpha = (alpha_f * 255.0).round().clamp(0.0, 255.0) as u8;
+
+            // Final alpha: flood-ring pixels get the natural alpha
+            // (so AA edges fade out smoothly); spill-band pixels stay
+            // fully opaque (we only wanted to sanitise the colour).
+            let final_alpha_f = if flooded[i] {
+                alpha_natural * src_alpha
+            } else {
+                src_alpha
+            };
+            let alpha = (final_alpha_f * 255.0).round().clamp(0.0, 255.0) as u8;
             *p = image::Rgba([r, g, b, alpha]);
         }
     }

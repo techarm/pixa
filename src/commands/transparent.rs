@@ -31,6 +31,11 @@ pub struct TransparentArgs {
     /// background spill removal; pixels beyond it stay fully opaque.
     #[arg(long, default_value = "90")]
     pub edge_width: f64,
+    /// Spatial radius (pixels) for decontaminating AA outline pixels
+    /// just outside the flood reach. Stays opaque but removes residual
+    /// background-colour spill. Set to 0 to disable.
+    #[arg(long, default_value = "3")]
+    pub spill_radius: u32,
 }
 
 pub fn run(args: TransparentArgs) -> Result<()> {
@@ -68,6 +73,7 @@ pub fn run(args: TransparentArgs) -> Result<()> {
             bg_override,
             args.tolerance,
             args.edge_width,
+            args.spill_radius,
         ) {
             Ok(report) => {
                 ok += 1;
@@ -124,6 +130,7 @@ fn process_one(
     bg: Option<[u8; 3]>,
     tolerance: f64,
     edge_width: f64,
+    spill_radius: u32,
 ) -> Result<Report> {
     let img = image::open(input).with_context(|| format!("Failed to open: {}", input.display()))?;
 
@@ -131,6 +138,7 @@ fn process_one(
         background: bg,
         tolerance,
         edge_width,
+        spill_radius,
     };
     let (rgba, result) = transparent::apply_transparency(&img, &opts)
         .with_context(|| format!("Failed to key out background: {}", input.display()))?;

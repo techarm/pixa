@@ -41,6 +41,10 @@ pub struct SplitArgs {
     /// when `--transparent` is set.
     #[arg(long, default_value = "90", requires = "transparent")]
     pub edge_width: f64,
+    /// Spatial radius (pixels) for AA-outline decontamination when
+    /// `--transparent` is set. Set to 0 to disable.
+    #[arg(long, default_value = "3", requires = "transparent")]
+    pub spill_radius: u32,
 }
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
@@ -168,6 +172,7 @@ pub fn run(args: SplitArgs) -> Result<()> {
                 result.background,
                 args.tolerance,
                 args.edge_width,
+                args.spill_radius,
             )
         } else {
             split::crop_padded(&img, obj, max_w, max_h, result.background)
@@ -219,6 +224,7 @@ fn preview_path(input: &std::path::Path) -> PathBuf {
 /// canvas, keying out `background` from the cropped content. Mirrors
 /// `split::crop_padded` but produces an RGBA image where the background
 /// color is alpha=0 instead of filled.
+#[allow(clippy::too_many_arguments)]
 fn crop_padded_transparent(
     img: &DynamicImage,
     obj: &split::DetectedObject,
@@ -227,9 +233,16 @@ fn crop_padded_transparent(
     background: [u8; 3],
     tolerance: f64,
     edge_width: f64,
+    spill_radius: u32,
 ) -> DynamicImage {
     let mut cropped = img.crop_imm(obj.x, obj.y, obj.w, obj.h).to_rgba8();
-    transparent::apply_transparency_to_rgba(&mut cropped, background, tolerance, edge_width);
+    transparent::apply_transparency_to_rgba(
+        &mut cropped,
+        background,
+        tolerance,
+        edge_width,
+        spill_radius,
+    );
 
     let tw = target_w.max(obj.w);
     let th = target_h.max(obj.h);
