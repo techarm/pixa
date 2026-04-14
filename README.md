@@ -216,29 +216,45 @@ PNG is: ask the model to render the subject on a **solid magenta
 (`#FF00FF`)** (or chroma-green) background, then key it out:
 
 ```bash
-# Single icon → writes sibling <name>.transparent.png
+# Chroma-key-friendly prompt (no pink/purple on subject) — defaults
+# are tuned for this, no flags needed
 pixa transparent fox.png
 
-# Override the detected background / pick a specific key color
+# Softer / prettier AI prompt (any hue, soft shadows) — the
+# "high-quality" combo: narrower flood + edge despill + 1 px erode
+pixa transparent fox.png --tolerance 130 --despill --shrink 1
+
+# Override the detected background / pick a specific key colour
 pixa transparent fox.png -o fox-alpha.png --bg '#FF00FF'
 
 # Batch a whole directory
-pixa transparent ./icons -r -o ./icons-alpha
+pixa transparent ./icons -r -o ./icons-alpha --despill --shrink 1
 ```
 
-For sheets of multiple icons, combine with `split`:
+For sheets of multiple icons, combine with `split` — it accepts the
+same `--tolerance` / `--despill` / `--shrink` flags:
 
 ```bash
-pixa split sheet.png -o ./out --names a,b,c --transparent
+pixa split sheet.png -o ./out --names a,b,c --transparent \
+    --tolerance 130 --despill --shrink 1
 ```
 
+| Flag | Default | Purpose |
+|---|---|---|
+| `--bg <#RRGGBB>` | auto | Override the detected background colour |
+| `--tolerance <N>` | 200 | RGB distance threshold for flood-fill |
+| `--despill` | off | Channel-based spill suppression on edge band |
+| `--despill-band <N>` | 3 | Edge-band radius (pixels) for `--despill` |
+| `--shrink <N>` | 0 | Morphological erosion of the opaque region |
+
 The algorithm is a connectivity-based flood fill from the four corners
-through pixels within `--tolerance` (default 200) RGB-distance of the
-detected background colour. Flooded pixels become alpha 0; everything
-else is left exactly as-is — no colour shifting, no soft alpha halo. A
-near-bg pixel buried inside the subject (e.g. a designed pink sparkle)
-is not reachable from the corners and survives. Raise `--tolerance` if
-a halo remains, lower it if pastel subject regions dissolve.
+through pixels within `--tolerance` RGB-distance of the detected
+background colour. Flooded pixels become alpha 0; everything else is
+left exactly as-is — no colour shifting, no soft alpha halo. A near-bg
+pixel buried inside the subject (e.g. a designed pink sparkle) is not
+reachable from the corners and survives. Raise `--tolerance` if a halo
+remains, lower it and add `--despill --shrink 1` if pastel subject
+regions dissolve.
 
 For best results, use a chroma-key-friendly generator prompt that
 forbids purple/pink/violet hues on the subject — see

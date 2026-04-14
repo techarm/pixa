@@ -37,6 +37,16 @@ pub struct SplitArgs {
     /// `--transparent`.
     #[arg(long, default_value = "200", requires = "transparent")]
     pub tolerance: f64,
+    /// Enable channel-based spill suppression on the edge band.
+    #[arg(long, requires = "transparent")]
+    pub despill: bool,
+    /// Edge-band radius (pixels) for `--despill`.
+    #[arg(long, default_value = "3", requires = "despill")]
+    pub despill_band: u32,
+    /// Morphologically erode each transparent crop's opaque region by
+    /// this many pixels.
+    #[arg(long, default_value = "0", requires = "transparent")]
+    pub shrink: u32,
 }
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
@@ -156,7 +166,17 @@ pub fn run(args: SplitArgs) -> Result<()> {
     let mut saved_paths = Vec::new();
     for (name, obj) in names.iter().zip(result.objects.iter()) {
         let cropped = if args.transparent {
-            crop_padded_transparent(&img, obj, max_w, max_h, result.background, args.tolerance)
+            crop_padded_transparent(
+                &img,
+                obj,
+                max_w,
+                max_h,
+                result.background,
+                args.tolerance,
+                args.despill,
+                args.despill_band,
+                args.shrink,
+            )
         } else {
             split::crop_padded(&img, obj, max_w, max_h, result.background)
         };
@@ -207,6 +227,7 @@ fn preview_path(input: &std::path::Path) -> PathBuf {
 /// canvas, keying out `background` from the cropped content. Mirrors
 /// `split::crop_padded` but produces an RGBA image where the background
 /// color is alpha=0 instead of filled.
+#[allow(clippy::too_many_arguments)]
 fn crop_padded_transparent(
     img: &DynamicImage,
     obj: &split::DetectedObject,
@@ -214,9 +235,19 @@ fn crop_padded_transparent(
     target_h: u32,
     background: [u8; 3],
     tolerance: f64,
+    despill: bool,
+    despill_band: u32,
+    shrink: u32,
 ) -> DynamicImage {
     let mut cropped = img.crop_imm(obj.x, obj.y, obj.w, obj.h).to_rgba8();
-    transparent::apply_transparency_to_rgba(&mut cropped, background, tolerance);
+    transparent::apply_transparency_to_rgba(
+        &mut cropped,
+        background,
+        tolerance,
+        despill,
+        despill_band,
+        shrink,
+    );
 
     let tw = target_w.max(obj.w);
     let th = target_h.max(obj.h);

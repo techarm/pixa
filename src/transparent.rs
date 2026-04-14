@@ -13,13 +13,18 @@
 //! 2. Flood-fill (4-connectivity) from the four image corners through
 //!    every pixel whose RGB-space distance from the background is at
 //!    or below `tolerance`.
-//! 3. Set the alpha of every flooded pixel to 0. Leave every other
-//!    pixel completely untouched — colour and alpha are preserved
-//!    exactly.
+//! 3. Set the alpha of every flooded pixel to 0.
+//! 4. Optional `despill`: for pixels within `despill_band` of the
+//!    flooded region, subtract the bg-aligned colour component so AA
+//!    contamination (pink fringes on a magenta key etc.) is
+//!    neutralised without touching alpha or interior pixels.
+//! 5. Optional `shrink`: morphologically erode the opaque region by
+//!    `shrink` pixels. Removes the outermost — and typically most
+//!    contaminated — ring at the cost of a tiny silhouette shrinkage.
 //!
-//! That's it. No colour-to-alpha shifting, no spill-suppression
-//! gymnastics, no soft alpha ramp. The contract is: "the background
-//! becomes transparent, the rest does not change."
+//! Core contract: "the background becomes transparent; the rest does
+//! not change." `despill` and `shrink` are opt-in refinements for
+//! images whose AI-generated edges carry leftover bg tint.
 //!
 //! ## Why connectivity matters
 //!
@@ -57,6 +62,19 @@ pub struct TransparentOptions {
     /// purples, or violets on the subject). For arbitrary inputs that
     /// do contain near-key designed colours, lower this (try 160).
     pub tolerance: f64,
+    /// Enable channel-based spill suppression on the edge band.
+    /// Neutralises bg-colour contamination on the outermost opaque
+    /// pixels (e.g. the pink fringes left by AA on a magenta key)
+    /// without changing alpha or interior pixels.
+    pub despill: bool,
+    /// Radius of the edge band (in pixels) where spill suppression is
+    /// applied, measured outward from the flooded region. Ignored
+    /// when `despill` is false. Default: 3.
+    pub despill_band: u32,
+    /// Morphologically erode the opaque region by this many pixels
+    /// after flood (and after despill). Removes the outermost AA ring
+    /// entirely; useful when contamination is heavy. Default: 0.
+    pub shrink: u32,
 }
 
 impl Default for TransparentOptions {
@@ -64,6 +82,9 @@ impl Default for TransparentOptions {
         Self {
             background: None,
             tolerance: 200.0,
+            despill: false,
+            despill_band: 3,
+            shrink: 0,
         }
     }
 }
@@ -143,7 +164,14 @@ pub fn apply_transparency(
     let bg = opts.background.unwrap_or_else(|| estimate_background(&rgb));
 
     let mut out = img.to_rgba8();
-    apply_transparency_to_rgba(&mut out, bg, opts.tolerance);
+    apply_transparency_to_rgba(
+        &mut out,
+        bg,
+        opts.tolerance,
+        opts.despill,
+        opts.despill_band,
+        opts.shrink,
+    );
 
     let mut transparent_pixels = 0u64;
     let mut opaque_pixels = 0u64;
@@ -167,7 +195,14 @@ pub fn apply_transparency(
 
 /// Apply connectivity-based chroma-key transparency to an RGBA image
 /// in place. See the module-level docs for the algorithm.
-pub fn apply_transparency_to_rgba(img: &mut RgbaImage, background: [u8; 3], tolerance: f64) {
+pub fn apply_transparency_to_rgba(
+    img: &mut RgbaImage,
+    background: [u8; 3],
+    tolerance: f64,
+    despill: bool,
+    despill_band: u32,
+    shrink: u32,
+) {
     let (w, h) = (img.width(), img.height());
     if w == 0 || h == 0 {
         return;
@@ -202,6 +237,37 @@ pub fn apply_transparency_to_rgba(img: &mut RgbaImage, background: [u8; 3], tole
     }
 
     // Pass 2: flood-fill from the four corners through candidates.
+    let mut flooded = flood_from_corners(&is_candidate, w, h);
+
+    // Pass 3 (optional): despill — channel-based bg-spill suppression
+    // on the edge band. Applied BEFORE shrink so we operate on the
+    // original contaminated pixels before any are eroded away.
+    if despill && despill_band > 0 {
+        apply_despill(img, &flooded, bg, despill_band, w, h);
+    }
+
+    // Pass 4 (optional): shrink — morphologically erode the opaque
+    // region by growing the flooded region outward by `shrink` pixels.
+    if shrink > 0 {
+        grow_flood(&mut flooded, shrink, w, h);
+    }
+
+    // Pass 5: write zero-alpha to every flooded pixel; everything else
+    // is untouched.
+    for y in 0..h {
+        for x in 0..w {
+            let i = (y as usize) * (w as usize) + (x as usize);
+            if flooded[i] {
+                img.put_pixel(x, y, image::Rgba([0, 0, 0, 0]));
+            }
+        }
+    }
+}
+
+/// 4-connected flood fill from the four image corners, propagating
+/// only through `is_candidate` pixels.
+fn flood_from_corners(is_candidate: &[bool], w: u32, h: u32) -> Vec<bool> {
+    let n = (w as usize) * (h as usize);
     let mut flooded = vec![false; n];
     let mut queue: VecDeque<(u32, u32)> = VecDeque::new();
     let corners = [(0u32, 0u32), (w - 1, 0), (0, h - 1), (w - 1, h - 1)];
@@ -227,14 +293,130 @@ pub fn apply_transparency_to_rgba(img: &mut RgbaImage, background: [u8; 3], tole
             }
         }
     }
+    flooded
+}
 
-    // Pass 3: clear flooded pixels. Leave every other pixel alone.
+/// Grow the flooded region outward by `radius` 4-connected steps,
+/// regardless of pixel colour. Used for `--shrink`.
+fn grow_flood(flooded: &mut [bool], radius: u32, w: u32, h: u32) {
+    // BFS with distance tracking; stop once dist exceeds radius.
+    let n = (w as usize) * (h as usize);
+    let mut dist = vec![u32::MAX; n];
+    let mut queue: VecDeque<(u32, u32)> = VecDeque::new();
     for y in 0..h {
         for x in 0..w {
             let i = (y as usize) * (w as usize) + (x as usize);
             if flooded[i] {
-                img.put_pixel(x, y, image::Rgba([0, 0, 0, 0]));
+                dist[i] = 0;
+                queue.push_back((x, y));
             }
+        }
+    }
+    while let Some((x, y)) = queue.pop_front() {
+        let i = (y as usize) * (w as usize) + (x as usize);
+        let d_here = dist[i];
+        if d_here >= radius {
+            continue;
+        }
+        let nbrs: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+        for (dx, dy) in nbrs {
+            let nx = x as i32 + dx;
+            let ny = y as i32 + dy;
+            if nx < 0 || ny < 0 || nx >= w as i32 || ny >= h as i32 {
+                continue;
+            }
+            let ni = (ny as usize) * (w as usize) + (nx as usize);
+            if dist[ni] > d_here + 1 {
+                dist[ni] = d_here + 1;
+                flooded[ni] = true;
+                queue.push_back((nx as u32, ny as u32));
+            }
+        }
+    }
+}
+
+/// Channel-based bg-spill suppression for pixels within `band`
+/// 4-connected steps of the flooded region. For a bg colour like
+/// magenta (R and B high, G low), each edge-band pixel has its
+/// high-bg-aligned channels reduced by the excess they carry over
+/// the low-bg-aligned channels — cancelling AI-generated AA
+/// contamination without touching alpha or interior pixels.
+fn apply_despill(img: &mut RgbaImage, flooded: &[bool], bg: [f64; 3], band: u32, w: u32, h: u32) {
+    // Classify each bg channel as "high" (> 128) or "low" (<= 128).
+    let mut high_ch: Vec<usize> = Vec::new();
+    let mut low_ch: Vec<usize> = Vec::new();
+    for (c, &v) in bg.iter().enumerate() {
+        if v > 128.0 {
+            high_ch.push(c);
+        } else {
+            low_ch.push(c);
+        }
+    }
+    if high_ch.is_empty() || low_ch.is_empty() {
+        // Monochrome bg (pure black/white/grey) has no directional
+        // spill signature — nothing to suppress.
+        return;
+    }
+
+    let n = (w as usize) * (h as usize);
+    // BFS outward from the flooded boundary to find edge-band pixels.
+    let mut dist = vec![u32::MAX; n];
+    let mut queue: VecDeque<(u32, u32)> = VecDeque::new();
+    for y in 0..h {
+        for x in 0..w {
+            let i = (y as usize) * (w as usize) + (x as usize);
+            if flooded[i] {
+                dist[i] = 0;
+                queue.push_back((x, y));
+            }
+        }
+    }
+    while let Some((x, y)) = queue.pop_front() {
+        let i = (y as usize) * (w as usize) + (x as usize);
+        let d_here = dist[i];
+        if d_here >= band {
+            continue;
+        }
+        let nbrs: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+        for (dx, dy) in nbrs {
+            let nx = x as i32 + dx;
+            let ny = y as i32 + dy;
+            if nx < 0 || ny < 0 || nx >= w as i32 || ny >= h as i32 {
+                continue;
+            }
+            let ni = (ny as usize) * (w as usize) + (nx as usize);
+            if flooded[ni] {
+                continue;
+            }
+            if dist[ni] > d_here + 1 {
+                dist[ni] = d_here + 1;
+                queue.push_back((nx as u32, ny as u32));
+            }
+        }
+    }
+
+    // Apply channel suppression on every pixel inside the edge band.
+    for y in 0..h {
+        for x in 0..w {
+            let i = (y as usize) * (w as usize) + (x as usize);
+            if flooded[i] || dist[i] == u32::MAX {
+                continue;
+            }
+            let p = img.get_pixel(x, y);
+            if p[3] == 0 {
+                continue;
+            }
+            let high_avg = high_ch.iter().map(|&c| p[c] as f64).sum::<f64>() / high_ch.len() as f64;
+            let low_avg = low_ch.iter().map(|&c| p[c] as f64).sum::<f64>() / low_ch.len() as f64;
+            let spill = (high_avg - low_avg).max(0.0);
+            if spill <= 0.0 {
+                continue;
+            }
+            let mut new_rgba = [p[0], p[1], p[2], p[3]];
+            for &c in &high_ch {
+                new_rgba[c] = (p[c] as f64 - spill).clamp(0.0, 255.0).round() as u8;
+            }
+            img.put_pixel(x, y, image::Rgba(new_rgba));
         }
     }
 }

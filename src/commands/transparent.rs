@@ -27,6 +27,21 @@ pub struct TransparentArgs {
     /// too wide and pastel/near-bg subject regions start dissolving.
     #[arg(long, default_value = "200")]
     pub tolerance: f64,
+    /// Enable channel-based spill suppression on the edge band:
+    /// neutralises bg-colour contamination on AA edges while keeping
+    /// alpha and interior pixels untouched. Lets you use prettier AI
+    /// prompts (softer outlines) without a visible pink/magenta ring.
+    #[arg(long)]
+    pub despill: bool,
+    /// Edge-band radius (in pixels) for `--despill`. Ignored otherwise.
+    #[arg(long, default_value = "3", requires = "despill")]
+    pub despill_band: u32,
+    /// Morphologically erode the opaque region by this many pixels
+    /// after flood. Useful when the AA contamination ring is too
+    /// wide to clean up cosmetically and the silhouette tolerating a
+    /// slight shrink is acceptable.
+    #[arg(long, default_value = "0")]
+    pub shrink: u32,
 }
 
 pub fn run(args: TransparentArgs) -> Result<()> {
@@ -58,7 +73,15 @@ pub fn run(args: TransparentArgs) -> Result<()> {
     for input in &inputs {
         let out_path = resolve_output(&args, input, input_root, inputs.len() == 1);
 
-        match process_one(input, &out_path, bg_override, args.tolerance) {
+        match process_one(
+            input,
+            &out_path,
+            bg_override,
+            args.tolerance,
+            args.despill,
+            args.despill_band,
+            args.shrink,
+        ) {
             Ok(report) => {
                 ok += 1;
                 total_in += report.in_size;
@@ -107,12 +130,24 @@ struct Report {
     out_size: u64,
 }
 
-fn process_one(input: &Path, output: &Path, bg: Option<[u8; 3]>, tolerance: f64) -> Result<Report> {
+#[allow(clippy::too_many_arguments)]
+fn process_one(
+    input: &Path,
+    output: &Path,
+    bg: Option<[u8; 3]>,
+    tolerance: f64,
+    despill: bool,
+    despill_band: u32,
+    shrink: u32,
+) -> Result<Report> {
     let img = image::open(input).with_context(|| format!("Failed to open: {}", input.display()))?;
 
     let opts = TransparentOptions {
         background: bg,
         tolerance,
+        despill,
+        despill_band,
+        shrink,
     };
     let (rgba, result) = transparent::apply_transparency(&img, &opts)
         .with_context(|| format!("Failed to key out background: {}", input.display()))?;

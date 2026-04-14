@@ -87,21 +87,46 @@ chroma-key-friendly prompt (template below), then key it out with
 more consistently than "transparent PNG" prompts.
 
 ```bash
-# Single icon → sibling <name>.transparent.png
+# Chroma-key-friendly prompt (subject avoids key hue) — defaults
+# are already tuned for this case:
 pixa transparent fox.png
+
+# Softer / prettier AI prompt (any hue, soft shadows) — the
+# "high-quality" combo: narrower flood + edge despill + 1 px erode
+pixa transparent fox.png --tolerance 130 --despill --shrink 1
 
 # Explicit output / explicit background colour
 pixa transparent fox.png -o fox-alpha.png --bg '#FF00FF'
 
 # Batch a directory of icons
-pixa transparent ./icons -r -o ./icons-alpha
+pixa transparent ./icons -r -o ./icons-alpha --despill --shrink 1
 ```
 
-For **sheets** of multiple icons on a solid bg, combine with `split`:
+For **sheets** of multiple icons on a solid bg, combine with `split`
+(accepts the same `--tolerance` / `--despill` / `--shrink` flags):
 
 ```bash
-pixa split sheet.png -o ./icons --names chart,doc,terminal --transparent
+pixa split sheet.png -o ./icons --names chart,doc,terminal \
+    --transparent --tolerance 130 --despill --shrink 1
 ```
+
+#### All chroma-key flags at a glance
+
+| Flag | Default | Purpose |
+|---|---|---|
+| `--bg <#RRGGBB>` | auto-detect | Override the detected background colour |
+| `--tolerance <N>` | 200 | RGB distance threshold for flood-fill |
+| `--despill` | off | Channel-based spill suppression on edge band |
+| `--despill-band <N>` | 3 | Edge-band radius (pixels) for `--despill` |
+| `--shrink <N>` | 0 | Morphologically erode the opaque region |
+
+**Recommended combos:**
+- Strict chroma-key prompt (subject avoids key hue): just
+  `pixa transparent icon.png` — defaults work.
+- Soft / natural-looking AI prompt:
+  `--tolerance 130 --despill --shrink 1` — narrower flood preserves
+  pastel design regions, despill cleans AA contamination, shrink
+  erases the last pixel of residual halo.
 
 #### Recommended chroma-key prompt template
 
@@ -134,18 +159,27 @@ Aspect ratio: 1:1, 1024x1024.
 
 #### How the algorithm works
 
-Connectivity-based flood fill from the four image corners through
-pixels whose RGB distance from the detected background colour is at
-or below `--tolerance` (default 200). Flooded pixels are set to
-alpha 0; everything else is left exactly as-is — no colour shifting,
-no soft alpha. A magenta-tinted detail buried inside the subject
-(e.g. a designed pink sparkle) is not reachable from the corners, so
-it survives. Output is always PNG; `.jpg` / `.webp` are redirected to
-`.png`.
+1. **Flood fill** from the four image corners through pixels whose
+   RGB distance from the detected background colour is at or below
+   `--tolerance`. Flooded pixels have their alpha set to 0; everything
+   else is left exactly as-is — no colour shifting, no soft alpha.
+2. **Despill (optional)**: for pixels within `--despill-band` steps
+   of the flooded region, subtract the bg-colour-aligned channel
+   excess so AA edges lose their pink/magenta tint while staying
+   fully opaque. Interior pixels are never touched.
+3. **Shrink (optional)**: morphologically erode the opaque region by
+   `--shrink` pixels, deleting the outermost — and typically most
+   contaminated — ring.
 
-If a halo remains, raise `--tolerance`. If the subject's soft pastel
-regions are dissolving (typically only with non-chroma-key prompts
-that include lavender/pink in the design), lower it (try 160).
+A magenta-tinted detail buried inside the subject (e.g. a designed
+pink sparkle) is not reachable from the corners, so it survives
+regardless of `--tolerance`. Output is always PNG; `.jpg` / `.webp`
+are redirected to `.png`.
+
+**Tuning tips:** if halo remains, raise `--tolerance` or add
+`--despill`. If the subject's soft pastel regions are dissolving,
+lower `--tolerance` and rely on `--despill --shrink 1` to clean
+edges instead.
 
 ### Generate a favicon set
 
