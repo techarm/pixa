@@ -29,12 +29,14 @@ watermarks, and more.
 | `info`             | Show dimensions, color, EXIF, SHA-256, and other metadata            |
 | `favicon`          | Generate a web-ready icon set (ICO + PNGs) from any image            |
 | `split`            | Auto-detect and crop individual objects from a sheet image           |
+| `transparent`      | Key out a solid background color (chroma-key) to produce an RGBA PNG |
 | `remove-watermark` | Remove the Gemini AI watermark via Reverse Alpha Blending            |
 | `detect`           | Score whether a Gemini watermark is present in an image              |
 | `install`          | Install the Claude Code skill so coding agents can use pixa          |
 
-`compress`, `convert`, and `remove-watermark` accept either a file or a
-directory — pass `-r/--recursive` to walk into subdirectories.
+`compress`, `convert`, `transparent`, and `remove-watermark` accept
+either a file or a directory — pass `-r/--recursive` to walk into
+subdirectories.
 
 > The watermark removal algorithm is adapted from
 > [GeminiWatermarkTool](https://github.com/allenk/GeminiWatermarkTool)
@@ -204,6 +206,36 @@ Useful flags:
 - `--preview` writes `<basename>-preview.png` showing the detection
 - `--preview-style detected|output|both` controls what the preview draws
 - `--padding 10` adds extra breathing room around each object
+- `--transparent` also keys out the detected background color per crop,
+  producing RGBA outputs ready to drop onto any UI background
+
+### Make an AI-generated icon transparent
+
+For AI-generated icons, the most reliable way to get a clean transparent
+PNG is: ask the model to render the subject on a **solid magenta
+(`#FF00FF`)** (or chroma-green) background, then key it out:
+
+```bash
+# Single icon → writes sibling <name>.transparent.png
+pixa transparent fox.png
+
+# Override the detected background / pick a specific key color
+pixa transparent fox.png -o fox-alpha.png --bg '#FF00FF'
+
+# Batch a whole directory
+pixa transparent ./icons -r -o ./icons-alpha
+```
+
+For sheets of multiple icons, combine with `split`:
+
+```bash
+pixa split sheet.png -o ./out --names a,b,c --transparent
+```
+
+The algorithm is a hybrid of distance-gating plus GIMP-style
+color-to-alpha on the edge ring, so anti-aliased contours stay smooth
+with no coloured halo when composited on other backgrounds. Tune with
+`--tolerance` and `--edge-width` for unusual inputs.
 
 ### Generate a favicon set
 
@@ -262,6 +294,7 @@ pixa/
     ├── favicon.rs                # favicon set generation
     ├── info.rs                   # metadata extraction
     ├── split.rs                  # sheet auto-cropping
+    ├── transparent.rs            # chroma-key / color-to-alpha
     ├── watermark.rs              # Reverse Alpha Blending
     └── commands/                 # one file per subcommand
         ├── mod.rs                # shared utilities (walk, format, mirror)

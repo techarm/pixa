@@ -8,6 +8,7 @@ pub mod install;
 pub mod remove_watermark;
 pub mod split;
 pub mod style;
+pub mod transparent;
 
 use anyhow::Result;
 use std::path::{Path, PathBuf};

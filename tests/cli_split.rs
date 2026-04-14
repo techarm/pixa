@@ -81,6 +81,39 @@ fn split_preview_flag_writes_preview_image() {
 }
 
 #[test]
+fn split_transparent_produces_alpha_outputs() {
+    let dir = TempDir::new().unwrap();
+    let input = dir.path().join("sheet.png");
+    let output = dir.path().join("out");
+    common::write_image(&common::sheet(2), &input);
+
+    Command::cargo_bin("pixa")
+        .unwrap()
+        .args([
+            "split",
+            input.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+            "--names",
+            "a,b",
+            "--transparent",
+        ])
+        .assert()
+        .success();
+
+    use image::GenericImageView;
+    let a = image::open(output.join("a.png")).unwrap();
+    assert!(a.color().has_alpha());
+    let rgba = a.to_rgba8();
+    // Corners of a transparent split output must have alpha=0 (the
+    // surrounding canvas), and the middle must hit the dark square.
+    let (w, h) = a.dimensions();
+    assert_eq!(rgba.get_pixel(0, 0)[3], 0);
+    assert_eq!(rgba.get_pixel(w - 1, h - 1)[3], 0);
+    assert_eq!(rgba.get_pixel(w / 2, h / 2)[3], 255);
+}
+
+#[test]
 fn split_output_sizes_are_uniform() {
     let dir = TempDir::new().unwrap();
     let input = dir.path().join("sheet.png");

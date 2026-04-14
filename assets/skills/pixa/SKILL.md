@@ -1,6 +1,6 @@
 ---
 name: pixa
-description: Use the `pixa` CLI for image processing tasks. Trigger when the user asks to compress, resize, optimize, or convert an image (especially AI-generated 4K PNGs that need to be web-ready); split a sprite or expression sheet into individual avatars; generate a favicon set from a logo; remove a Gemini AI watermark; or inspect image metadata. Also trigger for Japanese requests like 画像圧縮, リサイズ, WebP変換, アイコン生成, アバター切り出し, 透かし除去.
+description: Use the `pixa` CLI for image processing tasks. Trigger when the user asks to compress, resize, optimize, or convert an image (especially AI-generated 4K PNGs that need to be web-ready); split a sprite or expression sheet into individual avatars; generate a favicon set from a logo; remove a Gemini AI watermark; key out a solid background color to make an image transparent; or inspect image metadata. Also trigger for Japanese requests like 画像圧縮, リサイズ, WebP変換, アイコン生成, アバター切り出し, 透かし除去, 背景透過, 透明化.
 ---
 
 # pixa — image processing CLI
@@ -27,6 +27,7 @@ in the pixa repo, then put `target/release/pixa` on `$PATH`.
 | "Convert PNG to WebP" / 「WebPに変換」 | `compress` (auto-detects from output extension) |
 | "Resize this image to 1920px" | `compress --max 1920` |
 | "Split this sprite/expression sheet" / 「アバターを切り出し」 | `split` |
+| "Make this magenta/green bg transparent" / 「背景を透過」 | `transparent` |
 | "Generate favicons from a logo" / 「ファビコン生成」 | `favicon` |
 | "Remove the Gemini watermark" / 「透かし除去」 | `remove-watermark` |
 | "Show image dimensions / EXIF / size" | `info` |
@@ -76,6 +77,35 @@ Helpful flags:
 - `--preview` writes `<basename>-preview.png` showing the detected boxes
 - `--preview-style detected|output|both` controls what the preview draws
 - `--padding 10` adds extra breathing room around each object
+
+### Make a solid-background icon transparent
+
+For AI-generated icons/mascots, the most reliable workflow is: ask the
+generator for a **solid magenta (`#FF00FF`) or chroma-green background**,
+then key it out with `pixa transparent`. Generators handle solid-color
+backgrounds far more consistently than "transparent PNG" prompts.
+
+```bash
+# Single icon → sibling <name>.transparent.png
+pixa transparent fox.png
+
+# Explicit output / explicit background color
+pixa transparent fox.png -o fox-alpha.png --bg '#FF00FF'
+
+# Batch a directory of icons
+pixa transparent ./icons -r -o ./icons-alpha
+```
+
+For **sheets** of multiple icons on a solid bg, combine with `split`:
+
+```bash
+pixa split sheet.png -o ./icons --names chart,doc,terminal --transparent
+```
+
+The output is always a PNG with a real alpha channel (outputs requested
+as `.jpg` / `.webp` are auto-redirected to `.png`). Tweak `--tolerance`
+(how aggressively near-bg pixels are zeroed) and `--edge-width` (how
+wide the anti-aliased edge ring is) for noisy backgrounds.
 
 ### Generate a favicon set
 
@@ -143,7 +173,9 @@ If the user asks for any of these, recommend a different tool:
 - Lossless WebP (only lossy WebP is supported)
 - AVIF encoding
 - Image generation (AI image creation)
-- Background removal / object segmentation
+- **Generic** background removal (`pixa transparent` only handles solid-
+  color keying, not complex photo backgrounds — for that, use rembg,
+  Photoroom, or a similar ML segmentation tool)
 - OCR / text extraction
 - Video processing
 - HEIC encoding (decoding works via the `image` crate)
