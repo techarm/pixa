@@ -21,21 +21,12 @@ pub struct TransparentArgs {
     /// is auto-detected from the image's corner patches.
     #[arg(long)]
     pub bg: Option<String>,
-    /// RGB-space distance floor: pixels within this distance of the
-    /// background color are forced to fully transparent. Useful for
-    /// JPEG-compressed or slightly noisy backgrounds.
-    #[arg(long, default_value = "12")]
+    /// RGB-space distance from the detected background colour at or
+    /// below which a pixel is treated as background. Wider picks up
+    /// more of the AA contamination ring at the subject's outer edge;
+    /// too wide and pastel/near-bg subject regions start dissolving.
+    #[arg(long, default_value = "200")]
     pub tolerance: f64,
-    /// Width of the soft anti-aliased edge ring (RGB distance) beyond
-    /// `--tolerance`. Pixels inside this ring get per-pixel alpha and
-    /// background spill removal; pixels beyond it stay fully opaque.
-    #[arg(long, default_value = "90")]
-    pub edge_width: f64,
-    /// Spatial radius (pixels) for decontaminating AA outline pixels
-    /// just outside the flood reach. Stays opaque but removes residual
-    /// background-colour spill. Set to 0 to disable.
-    #[arg(long, default_value = "3")]
-    pub spill_radius: u32,
 }
 
 pub fn run(args: TransparentArgs) -> Result<()> {
@@ -67,14 +58,7 @@ pub fn run(args: TransparentArgs) -> Result<()> {
     for input in &inputs {
         let out_path = resolve_output(&args, input, input_root, inputs.len() == 1);
 
-        match process_one(
-            input,
-            &out_path,
-            bg_override,
-            args.tolerance,
-            args.edge_width,
-            args.spill_radius,
-        ) {
+        match process_one(input, &out_path, bg_override, args.tolerance) {
             Ok(report) => {
                 ok += 1;
                 total_in += report.in_size;
@@ -118,27 +102,17 @@ pub fn run(args: TransparentArgs) -> Result<()> {
 struct Report {
     background: [u8; 3],
     transparent_pixels: u64,
-    edge_pixels: u64,
     opaque_pixels: u64,
     in_size: u64,
     out_size: u64,
 }
 
-fn process_one(
-    input: &Path,
-    output: &Path,
-    bg: Option<[u8; 3]>,
-    tolerance: f64,
-    edge_width: f64,
-    spill_radius: u32,
-) -> Result<Report> {
+fn process_one(input: &Path, output: &Path, bg: Option<[u8; 3]>, tolerance: f64) -> Result<Report> {
     let img = image::open(input).with_context(|| format!("Failed to open: {}", input.display()))?;
 
     let opts = TransparentOptions {
         background: bg,
         tolerance,
-        edge_width,
-        spill_radius,
     };
     let (rgba, result) = transparent::apply_transparency(&img, &opts)
         .with_context(|| format!("Failed to key out background: {}", input.display()))?;
@@ -152,7 +126,6 @@ fn process_one(
     Ok(Report {
         background: result.background,
         transparent_pixels: result.transparent_pixels,
-        edge_pixels: result.edge_pixels,
         opaque_pixels: result.opaque_pixels,
         in_size,
         out_size,
@@ -175,7 +148,7 @@ fn print_report(input: &Path, output: &Path, r: &Report, batch: bool) {
         "#{:02x}{:02x}{:02x}",
         r.background[0], r.background[1], r.background[2]
     );
-    let total = r.transparent_pixels + r.edge_pixels + r.opaque_pixels;
+    let total = r.transparent_pixels + r.opaque_pixels;
     let pct = |n: u64| {
         if total == 0 {
             0.0
@@ -190,12 +163,6 @@ fn print_report(input: &Path, output: &Path, r: &Report, batch: bool) {
         ok_mark(),
         red(&format!("{:.1}%", pct(r.transparent_pixels))),
         dim(&format!("({} px)", r.transparent_pixels)),
-    );
-    println!(
-        "{} edge         {} {}",
-        ok_mark(),
-        red(&format!("{:.1}%", pct(r.edge_pixels))),
-        dim(&format!("({} px)", r.edge_pixels)),
     );
     println!(
         "{} opaque       {} {}",

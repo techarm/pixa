@@ -205,10 +205,19 @@ pixa transparent ./icons -r -o ./icons-alpha
 pixa split sheet.png -o ./out --names chart,document,terminal --transparent
 ```
 
-アルゴリズムは距離ゲーティング + GIMP 風 color-to-alpha のハイブリッド
-なので、アンチエイリアスされた輪郭も滑らかに保たれ、他の背景に重ねた
-ときの色ハロー（マゼンタ滲み）が発生しません。ノイズの多い背景には
-`--tolerance` と `--edge-width` で調整できます。
+アルゴリズムはシンプルです。検出した背景色から距離 `--tolerance`
+（デフォルト 200）以内のピクセルを四隅から flood-fill で連結追跡し、
+連結された全ピクセルを alpha 0 にします。それ以外のピクセルは色も
+alpha も**完全に触らない**（color-to-alpha のような色シフトなし）。
+被写体の内側に埋め込まれた近背景色のデザイン要素（例: 狐の右下のキラ）
+は四隅と連結していないため保持されます。
+
+ベストな結果には、AI 生成プロンプトで「紫/ピンク/ヴァイオレット禁止」を
+明示するクロマキー特化プロンプトの利用を推奨します（コピペ用テンプレートは
+`assets/skills/pixa/SKILL.md` 参照）。
+
+ハローが残る場合は `--tolerance` を上げる、被写体のパステル部分が消える
+場合は下げる（例 160）で調整できます。
 
 ### Favicon
 

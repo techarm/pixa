@@ -1,36 +1,35 @@
-//! Replace a solid background color with transparency.
+//! Replace a solid background colour with transparency.
 //!
 //! Intended for AI-generated icon/mascot images where the subject sits
-//! on a single uniform color (e.g. magenta `#FF00FF` or chroma green).
-//! Generating on a solid color and keying it out afterwards produces
-//! more consistent edges than asking the model for a transparent PNG
+//! on a single uniform colour (e.g. magenta `#FF00FF` or chroma green).
+//! Generating on a solid colour and keying it out afterwards produces
+//! more consistent results than asking the model for a transparent PNG
 //! directly.
 //!
-//! The algorithm is **connectivity-based matting**:
+//! ## Algorithm
 //!
-//!   1. From each of the four image corners, flood-fill outward
-//!      through pixels whose RGB distance to the background colour is
-//!      below `tolerance + edge_width`. The flooded region is the
-//!      *true* background — a designed element with a magenta tint
-//!      buried inside the foreground (e.g. a cloud's purple drop
-//!      shadow) is **not** connected to the corners and therefore
-//!      survives as opaque.
-//!   2. For flooded pixels:
-//!        - distance ≤ `tolerance` → alpha 0
-//!        - distance in the edge ring → GIMP-style color-to-alpha
-//!          (per-channel alpha + inverse-composite decontamination)
-//!        - distance > edge ring (reached by flood but colour is far
-//!          from bg) → alpha 255 with colour untouched
-//!   3. Non-flooded pixels pass through completely unchanged, even if
-//!      their RGB happens to be close to the key colour. This is what
-//!      lets designed near-key colours ride through without damage.
+//! 1. Estimate (or use the user-supplied) background colour from four
+//!    corner patches.
+//! 2. Flood-fill (4-connectivity) from the four image corners through
+//!    every pixel whose RGB-space distance from the background is at
+//!    or below `tolerance`.
+//! 3. Set the alpha of every flooded pixel to 0. Leave every other
+//!    pixel completely untouched — colour and alpha are preserved
+//!    exactly.
 //!
-//! The color-to-alpha step inverts the alpha-compositing equation:
-//! given `observed = alpha * foreground + (1 - alpha) * background`,
-//! the decontaminated foreground is
-//! `(observed - (1 - alpha) * background) / alpha`.
+//! That's it. No colour-to-alpha shifting, no spill-suppression
+//! gymnastics, no soft alpha ramp. The contract is: "the background
+//! becomes transparent, the rest does not change."
+//!
+//! ## Why connectivity matters
+//!
+//! A pixel that happens to share the background colour but is buried
+//! inside the foreground (e.g. a designed pink sparkle on a magenta-
+//! keyed image) is not reachable from the corners and therefore
+//! survives. Only pixels that form a continuous bridge of near-bg
+//! colour out to an image corner are removed.
 
-use image::{DynamicImage, GenericImageView, Rgb, RgbaImage};
+use image::{DynamicImage, GenericImageView, RgbaImage};
 use std::collections::VecDeque;
 use thiserror::Error;
 
@@ -46,59 +45,45 @@ pub enum TransparentError {
 
 #[derive(Debug, Clone)]
 pub struct TransparentOptions {
-    /// Background color to key out. If `None`, auto-detected from the
+    /// Background colour to key out. If `None`, auto-detected from the
     /// image's four corner patches.
     pub background: Option<[u8; 3]>,
-    /// RGB-space distance at or below which a pixel is forced to alpha
-    /// 0. Handles slightly noisy backgrounds (JPEG-compressed solids).
-    /// Default: 12.0.
+    /// RGB-space distance at or below which a pixel counts as
+    /// background for the flood fill. Wider values pick up more of the
+    /// AA contamination ring at the subject's outer edge; too wide and
+    /// the flood can chew through soft-edged subject regions whose
+    /// colour gradient extends down to near-bg values. Default: 200.0,
+    /// tuned for the chroma-key-friendly prompt template (no pinks,
+    /// purples, or violets on the subject). For arbitrary inputs that
+    /// do contain near-key designed colours, lower this (try 160).
     pub tolerance: f64,
-    /// Width of the anti-aliased edge ring (in RGB-space distance)
-    /// beyond `tolerance`. Pixels whose distance falls in
-    /// `(tolerance, tolerance + edge_width)` get per-pixel alpha and
-    /// decontamination via color-to-alpha; pixels beyond this ring are
-    /// treated as fully opaque. Default: 90.0.
-    pub edge_width: f64,
-    /// Spatial radius (in pixels) for a spill-suppression band around
-    /// the flooded background region. Pixels in this band are not
-    /// flooded (their RGB distance from bg is beyond `edge_width`), but
-    /// they sit close enough to the flood boundary to be AA
-    /// contamination. They stay fully opaque but get background-colour
-    /// spill removed. Set to 0 to disable. Default: 3.
-    pub spill_radius: u32,
 }
 
 impl Default for TransparentOptions {
     fn default() -> Self {
         Self {
             background: None,
-            tolerance: 12.0,
-            edge_width: 90.0,
-            spill_radius: 3,
+            tolerance: 200.0,
         }
     }
 }
 
 /// Pixels per side sampled from each of the four corners when
-/// auto-detecting the background color. Matches split.rs's setting so
-/// the two modules agree on what "background" means.
+/// auto-detecting the background colour.
 pub const CORNER_PATCH: u32 = 20;
 
 /// Result of a transparency pass.
 #[derive(Debug, Clone)]
 pub struct TransparentResult {
-    /// The background color that was actually keyed out (either auto-
-    /// detected or supplied via options).
+    /// The background colour that was actually keyed out.
     pub background: [u8; 3],
-    /// Number of fully transparent pixels in the output.
+    /// Number of pixels turned fully transparent.
     pub transparent_pixels: u64,
-    /// Number of partially transparent (edge) pixels in the output.
-    pub edge_pixels: u64,
-    /// Number of fully opaque pixels in the output.
+    /// Number of pixels left untouched (their alpha was kept as-is).
     pub opaque_pixels: u64,
 }
 
-/// Estimate the background color by taking the median of four corner
+/// Estimate the background colour by taking the median of four corner
 /// patches.
 pub fn estimate_background(img: &image::RgbImage) -> [u8; 3] {
     let (w, h) = (img.width(), img.height());
@@ -144,7 +129,7 @@ pub fn parse_hex_color(s: &str) -> Option<[u8; 3]> {
 }
 
 /// Apply transparency to `img` according to `opts`, returning an RGBA
-/// image with the background color keyed out.
+/// image with the background colour keyed out.
 pub fn apply_transparency(
     img: &DynamicImage,
     opts: &TransparentOptions,
@@ -158,22 +143,15 @@ pub fn apply_transparency(
     let bg = opts.background.unwrap_or_else(|| estimate_background(&rgb));
 
     let mut out = img.to_rgba8();
-    apply_transparency_to_rgba(
-        &mut out,
-        bg,
-        opts.tolerance,
-        opts.edge_width,
-        opts.spill_radius,
-    );
+    apply_transparency_to_rgba(&mut out, bg, opts.tolerance);
 
     let mut transparent_pixels = 0u64;
-    let mut edge_pixels = 0u64;
     let mut opaque_pixels = 0u64;
     for p in out.pixels() {
-        match p[3] {
-            0 => transparent_pixels += 1,
-            255 => opaque_pixels += 1,
-            _ => edge_pixels += 1,
+        if p[3] == 0 {
+            transparent_pixels += 1;
+        } else {
+            opaque_pixels += 1;
         }
     }
 
@@ -182,7 +160,6 @@ pub fn apply_transparency(
         TransparentResult {
             background: bg,
             transparent_pixels,
-            edge_pixels,
             opaque_pixels,
         },
     ))
@@ -190,13 +167,7 @@ pub fn apply_transparency(
 
 /// Apply connectivity-based chroma-key transparency to an RGBA image
 /// in place. See the module-level docs for the algorithm.
-pub fn apply_transparency_to_rgba(
-    img: &mut RgbaImage,
-    background: [u8; 3],
-    tolerance: f64,
-    edge_width: f64,
-    spill_radius: u32,
-) {
+pub fn apply_transparency_to_rgba(img: &mut RgbaImage, background: [u8; 3], tolerance: f64) {
     let (w, h) = (img.width(), img.height());
     if w == 0 || h == 0 {
         return;
@@ -207,35 +178,30 @@ pub fn apply_transparency_to_rgba(
         background[1] as f64,
         background[2] as f64,
     ];
-    let tolerance = tolerance.max(0.0);
-    let edge_width = edge_width.max(0.001);
-    // Flood-fill reach: the outer bound on how close-to-bg a pixel must
-    // be to count as background during connectivity analysis.
-    let flood_reach = tolerance + edge_width;
+    let tol_sq = tolerance.max(0.0).powi(2);
 
-    // Pass 1: per-pixel distance to bg + flood candidacy.
-    let mut dist = vec![0.0f64; n];
+    // Pass 1: candidacy mask. A pixel is a flood candidate if either
+    // its RGB is within `tolerance` of `bg`, or it is already fully
+    // transparent (so previously-keyed regions stay keyed).
     let mut is_candidate = vec![false; n];
     for y in 0..h {
         for x in 0..w {
             let i = (y as usize) * (w as usize) + (x as usize);
             let p = img.get_pixel(x, y);
             if p[3] == 0 {
-                // Already transparent → treat as bg for flood purposes.
                 is_candidate[i] = true;
                 continue;
             }
             let dr = p[0] as f64 - bg[0];
             let dg = p[1] as f64 - bg[1];
             let db = p[2] as f64 - bg[2];
-            let d = (dr * dr + dg * dg + db * db).sqrt();
-            dist[i] = d;
-            is_candidate[i] = d < flood_reach;
+            if dr * dr + dg * dg + db * db <= tol_sq {
+                is_candidate[i] = true;
+            }
         }
     }
 
-    // Pass 2: flood-fill from the four corners (4-connectivity) through
-    // candidates only.
+    // Pass 2: flood-fill from the four corners through candidates.
     let mut flooded = vec![false; n];
     let mut queue: VecDeque<(u32, u32)> = VecDeque::new();
     let corners = [(0u32, 0u32), (w - 1, 0), (0, h - 1), (w - 1, h - 1)];
@@ -262,137 +228,15 @@ pub fn apply_transparency_to_rgba(
         }
     }
 
-    // Pass 2b: morphological dilation band — pixels within
-    // `spill_radius` of a flooded pixel that are NOT themselves
-    // flooded. These are typically AA-contamination pixels whose RGB
-    // distance from bg falls just outside the flood reach; they will
-    // get colour-decontaminated but remain fully opaque.
-    let mut in_spill_band = vec![false; n];
-    if spill_radius > 0 {
-        // BFS outward from flooded boundary for up to `spill_radius` steps.
-        // Use a `dist_from_flood` buffer so we don't enqueue any pixel
-        // more than once.
-        let mut dist_from_flood = vec![u32::MAX; n];
-        let mut bfs: VecDeque<(u32, u32)> = VecDeque::new();
-        for y in 0..h {
-            for x in 0..w {
-                let i = (y as usize) * (w as usize) + (x as usize);
-                if flooded[i] {
-                    dist_from_flood[i] = 0;
-                    bfs.push_back((x, y));
-                }
-            }
-        }
-        while let Some((x, y)) = bfs.pop_front() {
-            let i = (y as usize) * (w as usize) + (x as usize);
-            let d_here = dist_from_flood[i];
-            if d_here >= spill_radius {
-                continue;
-            }
-            let nbrs: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
-            for (dx, dy) in nbrs {
-                let nx = x as i32 + dx;
-                let ny = y as i32 + dy;
-                if nx < 0 || ny < 0 || nx >= w as i32 || ny >= h as i32 {
-                    continue;
-                }
-                let ni = (ny as usize) * (w as usize) + (nx as usize);
-                if flooded[ni] {
-                    continue;
-                }
-                if dist_from_flood[ni] > d_here + 1 {
-                    dist_from_flood[ni] = d_here + 1;
-                    in_spill_band[ni] = true;
-                    bfs.push_back((nx as u32, ny as u32));
-                }
-            }
-        }
-    }
-
-    // Pass 3: classify and write each pixel.
-    //
-    // Denominator clamp for color-to-alpha: when bg has a near-extreme
-    // channel (e.g. G≈0 for pure magenta), tiny observation noise in
-    // that channel would otherwise amplify into huge alpha.
-    const MIN_DENOM: f64 = 32.0;
+    // Pass 3: clear flooded pixels. Leave every other pixel alone.
     for y in 0..h {
         for x in 0..w {
             let i = (y as usize) * (w as usize) + (x as usize);
-            let p = img.get_pixel_mut(x, y);
-            let src_alpha = p[3] as f64 / 255.0;
-            if src_alpha <= 0.0 {
-                *p = image::Rgba([0, 0, 0, 0]);
-                continue;
+            if flooded[i] {
+                img.put_pixel(x, y, image::Rgba([0, 0, 0, 0]));
             }
-
-            if !flooded[i] && !in_spill_band[i] {
-                // Interior pixel (not connected to corner bg): pass
-                // through unchanged, even if its RGB happens to be
-                // close to the key colour.
-                let a = (src_alpha * 255.0).round().clamp(0.0, 255.0) as u8;
-                *p = image::Rgba([p[0], p[1], p[2], a]);
-                continue;
-            }
-
-            let d = dist[i];
-            if flooded[i] && d <= tolerance {
-                *p = image::Rgba([0, 0, 0, 0]);
-                continue;
-            }
-
-            // Flooded+in edge ring OR spill band: compute the natural
-            // color-to-alpha alpha first.
-            let obs = [p[0] as f64, p[1] as f64, p[2] as f64];
-            let mut alpha_natural: f64 = 0.0;
-            for c in 0..3 {
-                let a = if obs[c] > bg[c] {
-                    let denom = (255.0 - bg[c]).max(MIN_DENOM);
-                    (obs[c] - bg[c]) / denom
-                } else if obs[c] < bg[c] {
-                    let denom = bg[c].max(MIN_DENOM);
-                    (bg[c] - obs[c]) / denom
-                } else {
-                    0.0
-                };
-                if a > alpha_natural {
-                    alpha_natural = a;
-                }
-            }
-            alpha_natural = alpha_natural.clamp(0.0, 1.0);
-
-            if alpha_natural <= 0.0 {
-                *p = image::Rgba([0, 0, 0, 0]);
-                continue;
-            }
-
-            // Decontaminate using the *natural* alpha so the math
-            // actually subtracts a meaningful amount of bg.
-            let one_minus_a = 1.0 - alpha_natural;
-            let fr = (obs[0] - one_minus_a * bg[0]) / alpha_natural;
-            let fg = (obs[1] - one_minus_a * bg[1]) / alpha_natural;
-            let fb = (obs[2] - one_minus_a * bg[2]) / alpha_natural;
-            let r = fr.clamp(0.0, 255.0).round() as u8;
-            let g = fg.clamp(0.0, 255.0).round() as u8;
-            let b = fb.clamp(0.0, 255.0).round() as u8;
-
-            // Final alpha: flood-ring pixels get the natural alpha
-            // (so AA edges fade out smoothly); spill-band pixels stay
-            // fully opaque (we only wanted to sanitise the colour).
-            let final_alpha_f = if flooded[i] {
-                alpha_natural * src_alpha
-            } else {
-                src_alpha
-            };
-            let alpha = (final_alpha_f * 255.0).round().clamp(0.0, 255.0) as u8;
-            *p = image::Rgba([r, g, b, alpha]);
         }
     }
-}
-
-/// Wrap a raw RGB triple as an `image::Rgb` — helper for callers that
-/// already hold `split::SplitResult::background`.
-pub fn rgb_from_triple(c: [u8; 3]) -> Rgb<u8> {
-    Rgb(c)
 }
 
 // ---------- tests ----------
@@ -425,9 +269,6 @@ mod tests {
         let img = DynamicImage::ImageRgb8(solid(40, 40, [255, 0, 255]));
         let (out, res) = apply_transparency(&img, &TransparentOptions::default()).unwrap();
         assert_eq!(res.background, [255, 0, 255]);
-        // Every pixel is pure background, so all should be transparent.
-        assert_eq!(res.opaque_pixels, 0);
-        assert_eq!(res.edge_pixels, 0);
         assert_eq!(res.transparent_pixels as u32, out.width() * out.height());
         for p in out.pixels() {
             assert_eq!(p[3], 0);
@@ -435,27 +276,24 @@ mod tests {
     }
 
     #[test]
-    fn foreground_pixel_stays_opaque() {
+    fn foreground_pixel_stays_opaque_and_unchanged() {
         // Magenta background with one solid black pixel in the middle.
         let mut img = solid(20, 20, [255, 0, 255]);
         img.put_pixel(10, 10, Rgb([0, 0, 0]));
-        let (out, res) = apply_transparency(
+        let (out, _) = apply_transparency(
             &DynamicImage::ImageRgb8(img),
             &TransparentOptions::default(),
         )
         .unwrap();
-        assert_eq!(res.background, [255, 0, 255]);
         let px = out.get_pixel(10, 10);
-        assert_eq!(px[3], 255);
-        assert_eq!(px[0], 0);
-        assert_eq!(px[1], 0);
-        assert_eq!(px[2], 0);
+        // Colour must be byte-for-byte the same — no decontamination.
+        assert_eq!((px[0], px[1], px[2], px[3]), (0, 0, 0, 255));
     }
 
     #[test]
     fn user_supplied_background_overrides_auto_detect() {
-        // Image's corners are black — without override auto-detect
-        // would pick black — but we explicitly ask for magenta.
+        // Image's corners are black — auto-detect would pick black —
+        // but we explicitly ask for magenta.
         let img = solid(30, 30, [0, 0, 0]);
         let opts = TransparentOptions {
             background: Some([255, 0, 255]),
@@ -463,27 +301,26 @@ mod tests {
         };
         let (out, res) = apply_transparency(&DynamicImage::ImageRgb8(img), &opts).unwrap();
         assert_eq!(res.background, [255, 0, 255]);
-        // Black is far from magenta → fully opaque.
+        // Black is far from magenta → nothing flooded → all opaque,
+        // colour unchanged.
         for p in out.pixels() {
             assert_eq!(p[3], 255);
+            assert_eq!((p[0], p[1], p[2]), (0, 0, 0));
         }
     }
 
     #[test]
     fn near_bg_pixel_surrounded_by_foreground_stays_opaque() {
-        // A solid black square on a magenta background, with one
-        // near-magenta pixel placed in the middle of the black square.
-        // Because that pixel is NOT connected to the corner bg via a
-        // chain of near-bg pixels, flood-fill matting must preserve
-        // it instead of keying it out.
+        // Solid black square on a magenta background, with one near-
+        // magenta pixel placed deep in the middle of the black square.
+        // It is not reachable from the corners, so flood-fill matting
+        // must preserve it.
         let mut img = solid(20, 20, [255, 0, 255]);
         for y in 5..15 {
             for x in 5..15 {
                 img.put_pixel(x, y, Rgb([0, 0, 0]));
             }
         }
-        // One interior pixel that happens to be near-magenta — this
-        // simulates a designer's pink/magenta detail inside the subject.
         img.put_pixel(10, 10, Rgb([240, 20, 240]));
         let (out, _) = apply_transparency(
             &DynamicImage::ImageRgb8(img),
@@ -497,9 +334,8 @@ mod tests {
 
     #[test]
     fn near_bg_pixel_connected_to_corner_gets_keyed_out() {
-        // Same magenta-with-near-magenta setup, but the near-magenta
-        // region now touches the image border — so it's connected to
-        // the corner background and must be keyed out.
+        // A near-magenta band along the top row touches the corners,
+        // so flood-fill reaches it and removes it.
         let mut img = solid(20, 20, [255, 0, 255]);
         for x in 0..20 {
             img.put_pixel(x, 0, Rgb([240, 20, 240]));
@@ -509,30 +345,26 @@ mod tests {
             &TransparentOptions::default(),
         )
         .unwrap();
-        // Top row pixels are connected to the corners via other top-
-        // row pixels that are exactly bg → flood reaches them.
         for x in 0..20 {
-            let px = out.get_pixel(x, 0);
-            assert!(
-                px[3] < 128,
-                "top-row x={x} should be at least semi-transparent, got alpha={}",
-                px[3]
+            assert_eq!(
+                out.get_pixel(x, 0)[3],
+                0,
+                "top-row x={x} should have been flooded"
             );
         }
     }
 
     #[test]
-    fn respects_pre_existing_alpha() {
-        // Source already has alpha=128 on foreground pixels.
+    fn pre_existing_transparent_pixels_stay_transparent() {
+        // Source already has alpha=0 pixels in the middle. They must
+        // survive as transparent regardless of their RGB.
         let mut rgba = RgbaImage::from_pixel(10, 10, Rgba([255, 0, 255, 255]));
-        rgba.put_pixel(5, 5, Rgba([0, 0, 0, 128]));
+        rgba.put_pixel(5, 5, Rgba([123, 45, 67, 0]));
         let (out, _) = apply_transparency(
             &DynamicImage::ImageRgba8(rgba),
             &TransparentOptions::default(),
         )
         .unwrap();
-        let px = out.get_pixel(5, 5);
-        // 255 (mask) * 128 (src) / 255 = 128
-        assert_eq!(px[3], 128);
+        assert_eq!(out.get_pixel(5, 5)[3], 0);
     }
 }

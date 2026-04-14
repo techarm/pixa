@@ -232,10 +232,17 @@ For sheets of multiple icons, combine with `split`:
 pixa split sheet.png -o ./out --names a,b,c --transparent
 ```
 
-The algorithm is a hybrid of distance-gating plus GIMP-style
-color-to-alpha on the edge ring, so anti-aliased contours stay smooth
-with no coloured halo when composited on other backgrounds. Tune with
-`--tolerance` and `--edge-width` for unusual inputs.
+The algorithm is a connectivity-based flood fill from the four corners
+through pixels within `--tolerance` (default 200) RGB-distance of the
+detected background colour. Flooded pixels become alpha 0; everything
+else is left exactly as-is — no colour shifting, no soft alpha halo. A
+near-bg pixel buried inside the subject (e.g. a designed pink sparkle)
+is not reachable from the corners and survives. Raise `--tolerance` if
+a halo remains, lower it if pastel subject regions dissolve.
+
+For best results, use a chroma-key-friendly generator prompt that
+forbids purple/pink/violet hues on the subject — see
+`assets/skills/pixa/SKILL.md` for a copy-paste template.
 
 ### Generate a favicon set
 

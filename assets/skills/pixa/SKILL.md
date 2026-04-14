@@ -80,16 +80,17 @@ Helpful flags:
 
 ### Make a solid-background icon transparent
 
-For AI-generated icons/mascots, the most reliable workflow is: ask the
-generator for a **solid magenta (`#FF00FF`) or chroma-green background**,
-then key it out with `pixa transparent`. Generators handle solid-color
-backgrounds far more consistently than "transparent PNG" prompts.
+For AI-generated icons, the most reliable workflow is: ask the
+generator for a **solid magenta (`#FF00FF`) background** with a
+chroma-key-friendly prompt (template below), then key it out with
+`pixa transparent`. Generators handle solid-colour backgrounds far
+more consistently than "transparent PNG" prompts.
 
 ```bash
 # Single icon → sibling <name>.transparent.png
 pixa transparent fox.png
 
-# Explicit output / explicit background color
+# Explicit output / explicit background colour
 pixa transparent fox.png -o fox-alpha.png --bg '#FF00FF'
 
 # Batch a directory of icons
@@ -102,10 +103,49 @@ For **sheets** of multiple icons on a solid bg, combine with `split`:
 pixa split sheet.png -o ./icons --names chart,doc,terminal --transparent
 ```
 
-The output is always a PNG with a real alpha channel (outputs requested
-as `.jpg` / `.webp` are auto-redirected to `.png`). Tweak `--tolerance`
-(how aggressively near-bg pixels are zeroed) and `--edge-width` (how
-wide the anti-aliased edge ring is) for noisy backgrounds.
+#### Recommended chroma-key prompt template
+
+Pasting this into the generator gives by far the cleanest results
+because the subject never contains hues close to the key colour, so
+there is no contamination ring to clean up:
+
+```
+A modern minimalist app icon, centered on canvas.
+
+Subject: <describe the subject here>
+
+CRITICAL background:
+- Pure solid flat magenta #FF00FF (RGB 255, 0, 255), edge to edge.
+
+CRITICAL colour constraints (the magenta is a chroma-key target):
+- The subject MUST NOT contain ANY purple, violet, lavender, pink,
+  magenta, fuchsia, or mauve hues.
+- No pastel colours where R and B are both high.
+- Allowed palette: greys, blacks, blues (R < G), greens, yellows,
+  oranges, reds (B < G).
+
+CRITICAL edge constraints:
+- Outlines must be solid neutral grey or black, never tinted purple.
+- Hard edges only — no soft glows, drop shadows, or gradients that
+  fade toward the magenta background.
+
+Aspect ratio: 1:1, 1024x1024.
+```
+
+#### How the algorithm works
+
+Connectivity-based flood fill from the four image corners through
+pixels whose RGB distance from the detected background colour is at
+or below `--tolerance` (default 200). Flooded pixels are set to
+alpha 0; everything else is left exactly as-is — no colour shifting,
+no soft alpha. A magenta-tinted detail buried inside the subject
+(e.g. a designed pink sparkle) is not reachable from the corners, so
+it survives. Output is always PNG; `.jpg` / `.webp` are redirected to
+`.png`.
+
+If a halo remains, raise `--tolerance`. If the subject's soft pastel
+regions are dissolving (typically only with non-chroma-key prompts
+that include lavender/pink in the design), lower it (try 160).
 
 ### Generate a favicon set
 
