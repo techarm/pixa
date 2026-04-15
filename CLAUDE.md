@@ -90,3 +90,49 @@ make test     # run all tests
 - Unit tests live in each `src/*.rs` via `#[cfg(test)]`.
 - Integration tests live in `tests/cli_*.rs` via `assert_cmd`.
 - Test images are generated in-memory (no binary fixtures committed).
+
+## Bug Fix Checklist — MANDATORY
+
+Before opening any `fix:` PR, every step below MUST be performed. Do
+not skip. This checklist exists because a real bug (#12) shipped
+with only one of two affected code paths fixed, forcing a second
+release cycle and wasting the user's time.
+
+**1. Grep every call site of the affected primitive.**
+When fixing a bug in how we call a library API (codec, encoder,
+decoder, parser, IO helper, etc.), the first action is a repo-wide
+search for every call to that same API. Audit each hit. If the
+bug applies there too, fix it in the same PR.
+
+```bash
+# Example: the #12 bug was `webp::Encoder::from_rgb` dropping alpha.
+# Before shipping, this grep should have turned up BOTH sites:
+rg 'webp::Encoder::from_rgb\b' src/
+# → src/convert.rs  AND  src/compress.rs
+```
+
+The pattern generalises: whenever a fix changes how a primitive
+(`image::open`, `to_rgb8`, `DynamicImage::save`, `webp::Encoder::*`,
+`mozjpeg::Compress::*`, `oxipng::optimize*`, filesystem calls, etc.)
+is invoked, grep for other call sites of the same primitive and
+audit every one before opening the PR.
+
+**2. Write a symptom-level integration test, not just a unit test.**
+A unit test on one internal function only proves that one function
+is correct — it does not prove the user-visible invariant holds
+across every command that can exhibit the symptom. Add an
+integration test in `tests/cli_*.rs` that invokes the pixa CLI
+exactly as a user would and asserts the symptom does not recur.
+
+For #12, the right test would have been:
+*"`pixa compress transparent.png -o out.webp` produces a WebP
+whose alpha channel is preserved"* — which exercises `compress.rs`
+and would have failed on 0.1.6, catching the second bug before
+release. A unit test bound to `convert_image` alone (as #12 shipped)
+could not have caught it.
+
+**3. Re-read the original report, not just the first code path you
+found.** The user's words describe a *symptom*; the first code path
+you match is a *hypothesis*. Before declaring a fix complete, ask:
+"does any other command or code path produce this same symptom?"
+If yes, they are all in scope for this PR.

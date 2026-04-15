@@ -149,18 +149,42 @@ fn encode_png(img: &DynamicImage, level: u8) -> Result<Vec<u8>, CompressError> {
 }
 
 fn encode_webp(img: &DynamicImage, quality: u8) -> Result<Vec<u8>, CompressError> {
-    let rgb = img.to_rgb8();
-    let (w, h) = rgb.dimensions();
-    let encoder = webp::Encoder::from_rgb(rgb.as_raw(), w, h);
-    let mem = encoder.encode(quality as f32);
+    let mem = if img.color().has_alpha() {
+        let rgba = img.to_rgba8();
+        let (w, h) = rgba.dimensions();
+        webp::Encoder::from_rgba(rgba.as_raw(), w, h).encode(quality as f32)
+    } else {
+        let rgb = img.to_rgb8();
+        let (w, h) = rgb.dimensions();
+        webp::Encoder::from_rgb(rgb.as_raw(), w, h).encode(quality as f32)
+    };
     Ok(mem.to_vec())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use image::{GenericImageView, Rgb, RgbImage};
+    use image::{GenericImageView, Rgb, RgbImage, Rgba, RgbaImage};
     use tempfile::TempDir;
+
+    fn transparent_half_image(w: u32, h: u32) -> DynamicImage {
+        // High-entropy RGB pattern + hard alpha split. The entropy is
+        // load-bearing: a low-entropy image (e.g. solid colour + alpha
+        // split) compresses smaller as PNG than as WebP, which would
+        // trip `compress_image`'s kept-original fallback and bypass
+        // the `encode_webp` path this test is supposed to cover.
+        let mut img = RgbaImage::new(w, h);
+        for y in 0..h {
+            for x in 0..w {
+                let r = ((x * 13).wrapping_mul(y * 17 + 1) % 256) as u8;
+                let g = ((x * 29) ^ (y * 31)) as u8;
+                let b = ((x + y) * 71 % 256) as u8;
+                let alpha = if x < w / 2 { 255 } else { 0 };
+                img.put_pixel(x, y, Rgba([r, g, b, alpha]));
+            }
+        }
+        DynamicImage::ImageRgba8(img)
+    }
 
     /// Create a small test image with varying colors (so encoders don't
     /// collapse it to a trivial-size file).
@@ -248,6 +272,40 @@ mod tests {
     }
 
     // --- compress_image end-to-end ---
+
+    #[test]
+    fn compress_transparent_png_to_webp_preserves_alpha() {
+        let dir = TempDir::new().unwrap();
+        let input = dir.path().join("in.png");
+        let output = dir.path().join("out.webp");
+        transparent_half_image(64, 64)
+            .save(&input)
+            .expect("write transparent png");
+
+        let result = compress_image(&input, &output, None).unwrap();
+        // Guard against the kept-original fallback silently making this
+        // test pass — we must actually have exercised `encode_webp`.
+        assert!(
+            !result.kept_original,
+            "test must hit the WebP encode path, not the kept-original fallback"
+        );
+        let bytes = std::fs::read(&output).unwrap();
+        assert_eq!(&bytes[..4], b"RIFF", "output must be real WebP");
+        assert_eq!(&bytes[8..12], b"WEBP");
+
+        let decoded = image::open(&output).unwrap();
+        assert!(
+            decoded.color().has_alpha(),
+            "webp compressed from a transparent PNG must retain alpha"
+        );
+        let rgba = decoded.to_rgba8();
+        assert_eq!(rgba.get_pixel(0, 0)[3], 255, "opaque half stays opaque");
+        assert_eq!(
+            rgba.get_pixel(63, 0)[3],
+            0,
+            "transparent half stays transparent"
+        );
+    }
 
     #[test]
     fn compress_png_to_webp_roundtrip() {
