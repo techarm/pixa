@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5](https://github.com/techarm/pixa/compare/v0.1.4...v0.1.5) - 2026-04-15
+
+### Added
+
+- **`transparent`** — key out a solid background colour (chroma-key) from single images or directories, using a connectivity-based flood fill from the four corners. Optional `--despill` for channel-based edge spill suppression and `--shrink N` for morphological erosion of the outermost ring. ([#9](https://github.com/techarm/pixa/pull/9))
+- **`split --transparent`** — same chroma-key treatment applied per cropped object from a sheet. Accepts the same `--tolerance` / `--despill` / `--shrink` tuning flags. ([#9](https://github.com/techarm/pixa/pull/9))
+- **Chroma-key prompt template** in the bundled Claude Code skill so agents can ask AI generators for images that key cleanly out of the box. ([#9](https://github.com/techarm/pixa/pull/9))
+
 ## [0.1.4] - 2026-04-09
 
 ### Features
