@@ -274,7 +274,16 @@ mod tests {
             .save(&input)
             .expect("write transparent png");
 
-        compress_image(&input, &output, None).unwrap();
+        let result = compress_image(&input, &output, None).unwrap();
+        // Guard against the kept-original fallback silently making this
+        // test pass — we must actually have exercised `encode_webp`.
+        assert!(
+            !result.kept_original,
+            "test must hit the WebP encode path, not the kept-original fallback"
+        );
+        let bytes = std::fs::read(&output).unwrap();
+        assert_eq!(&bytes[..4], b"RIFF", "output must be real WebP");
+        assert_eq!(&bytes[8..12], b"WEBP");
 
         let decoded = image::open(&output).unwrap();
         assert!(
