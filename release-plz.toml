@@ -38,4 +38,12 @@ commit_preprocessors = [
     # of earlier releases. Subjects that already end in terminal
     # punctuation are left alone.
     { pattern = '([^.!?\s])\s*$', replace = '$1.' },
+    # Turn plain `(#NN)` PR references into markdown links, matching
+    # the hand-polished style of 0.1.3–0.1.5 entries (e.g.
+    # `([#9](https://github.com/techarm/pixa/pull/9))`). Copilot flags
+    # the inconsistency on every release PR otherwise. A preprocessor
+    # is sufficient — no custom body template needed (the custom-body
+    # approach previously broke the `## [version] - date` headers and
+    # was reverted in #4 / #8).
+    { pattern = '\(#(\d+)\)', replace = '([#$1](https://github.com/techarm/pixa/pull/$1))' },
 ]
