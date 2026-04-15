@@ -15,16 +15,24 @@ publish = true              # auto-publish to crates.io when release PR is merge
 # releases without requiring a manual edit on each release PR.
 [changelog]
 commit_preprocessors = [
-    # Upper-case only the first character of each commit subject.
+    # Capitalise only the first character of the commit SUBJECT, leaving
+    # the `type(scope)!: ` conventional-commit prefix untouched.
     #
-    # `replace_command` pipes the *entire* matched commit message
-    # through the command's stdin — the `pattern` just gates whether
-    # the command runs. The previous `tr "[:lower:]" "[:upper:]"`
-    # therefore uppercased the whole subject (e.g. `PRESERVE ALPHA
-    # CHANNEL...`), not just the leading character. Use a perl
-    # one-liner that capitalises only the first char; perl is
-    # preinstalled on both ubuntu-latest runners and macOS.
-    { pattern = '^[a-z]', replace_command = '''perl -pe 's/^(.)/\U$1/' ''' },
+    # Why this matters: `commit_preprocessors` run BEFORE git-cliff's
+    # conventional-commit parser. A naive `perl -pe 's/^(.)/\U$1/'`
+    # uppercases the type (`fix` → `Fix`), which then fails to match
+    # release-plz's default `^fix` parser and drops the entry into
+    # `### Other` instead of `### Fixed`. That's how the 0.1.6 release
+    # PR ended up with `- *(CONVERT)* PRESERVE ALPHA ...` under
+    # `### Other` instead of `- *(convert)* Preserve alpha ...` under
+    # `### Fixed`.
+    #
+    # The pattern gates the command to commits that look like a
+    # conventional-commit subject whose body starts lowercase. The
+    # perl substitution preserves the prefix (group 1) and only
+    # uppercases the first body character (group 2). Perl is
+    # preinstalled on ubuntu-latest runners and macOS.
+    { pattern = '^[a-z]+(\([^)]+\))?!?:\s+[a-z]', replace_command = '''perl -pe 's/^([a-z]+(?:\([^)]+\))?!?:\s+)([a-z])/$1\U$2/' ''' },
     # Ensure the subject ends with a period so the generated entry
     # reads as a complete sentence, matching the hand-polished style
     # of earlier releases. Subjects that already end in terminal
