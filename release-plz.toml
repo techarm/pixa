@@ -15,10 +15,16 @@ publish = true              # auto-publish to crates.io when release PR is merge
 # releases without requiring a manual edit on each release PR.
 [changelog]
 commit_preprocessors = [
-    # Upper-case the first character of each commit subject via
-    # git-cliff's `replace_command`. `tr` is portable across every
-    # environment where release-plz runs (GitHub Actions, local dev).
-    { pattern = '^[a-z]', replace_command = 'tr "[:lower:]" "[:upper:]"' },
+    # Upper-case only the first character of each commit subject.
+    #
+    # `replace_command` pipes the *entire* matched commit message
+    # through the command's stdin — the `pattern` just gates whether
+    # the command runs. The previous `tr "[:lower:]" "[:upper:]"`
+    # therefore uppercased the whole subject (e.g. `PRESERVE ALPHA
+    # CHANNEL...`), not just the leading character. Use a perl
+    # one-liner that capitalises only the first char; perl is
+    # preinstalled on both ubuntu-latest runners and macOS.
+    { pattern = '^[a-z]', replace_command = '''perl -pe 's/^(.)/\U$1/' ''' },
     # Ensure the subject ends with a period so the generated entry
     # reads as a complete sentence, matching the hand-polished style
     # of earlier releases. Subjects that already end in terminal
