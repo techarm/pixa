@@ -7,7 +7,21 @@ git_tag_enable = true
 git_release_enable = false  # cargo-dist creates the GitHub Release, not release-plz
 publish = true              # auto-publish to crates.io when release PR is merged
 
-# Use release-plz's default changelog generation (powered by git-cliff).
-# No custom [changelog] template — the default correctly creates
-# ## [version] - date section headers, which our custom template was
-# breaking (putting entries under [Unreleased] without a version header).
+# Changelog polish. We intentionally keep release-plz's default version
+# section rendering (the previous attempt at a full custom template
+# broke the `## [version] - date` headers), and only add a small
+# commit-subject preprocessor so every auto-generated entry matches the
+# sentence-case, terminal-period style of the hand-polished earlier
+# releases without requiring a manual edit on each release PR.
+[changelog]
+commit_preprocessors = [
+    # Upper-case the first character of each commit subject via
+    # git-cliff's `replace_command`. `tr` is portable across every
+    # environment where release-plz runs (GitHub Actions, local dev).
+    { pattern = '^[a-z]', replace_command = 'tr "[:lower:]" "[:upper:]"' },
+    # Ensure the subject ends with a period so the generated entry
+    # reads as a complete sentence, matching the hand-polished style
+    # of earlier releases. Subjects that already end in terminal
+    # punctuation are left alone.
+    { pattern = '([^.!?\s])\s*$', replace = '$1.' },
+]
