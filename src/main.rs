@@ -5,12 +5,14 @@ use clap::{CommandFactory, Parser, Subcommand};
 
 use commands::{
     completions, compress, convert, detect, favicon, info, install, remove_watermark, split,
+    transparent,
 };
 
 const EXAMPLES: &str = "\
 Examples:
   pixa compress hero.png -o hero.webp --max 1920
   pixa split sheet.png -o ./out --names neutral,happy,thinking,surprised,sad
+  pixa transparent fox.png --bg '#FF00FF'
   pixa favicon logo.png -o ./favicon
   pixa convert photo.png photo.webp
   pixa info photo.jpg
@@ -59,6 +61,9 @@ enum Commands {
     /// Auto-detect and crop individual objects from a sheet image
     Split(split::SplitArgs),
 
+    /// Replace a solid background color with transparency (chroma-key)
+    Transparent(transparent::TransparentArgs),
+
     /// Install integrations (Claude Code skill, etc.)
     Install(install::InstallArgs),
 
@@ -88,6 +93,7 @@ fn main() -> Result<()> {
         Commands::Info(a) => info::run(a),
         Commands::Favicon(a) => favicon::run(a),
         Commands::Split(a) => split::run(a),
+        Commands::Transparent(a) => transparent::run(a),
         Commands::Install(a) => install::run(a),
         Commands::Completions(a) => {
             let mut cmd = Cli::command();

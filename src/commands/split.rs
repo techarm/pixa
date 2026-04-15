@@ -1,6 +1,8 @@
 use anyhow::{Context, Result};
 use clap::{Args, ValueEnum};
+use image::{DynamicImage, Rgba, RgbaImage};
 use pixa::split::{self, PreviewStyle, SplitOptions};
+use pixa::transparent;
 use std::path::PathBuf;
 
 use super::style::{arrow, cyan, dim, fail_mark, green, ok_mark, red};
@@ -26,6 +28,25 @@ pub struct SplitArgs {
     /// What to draw in the preview image
     #[arg(long, value_enum, default_value = "output")]
     pub preview_style: PreviewStyleArg,
+    /// Replace the detected background with transparency in each output.
+    /// Uses the same chroma-key logic as `pixa transparent`.
+    #[arg(long)]
+    pub transparent: bool,
+    /// RGB distance from the detected background colour at or below
+    /// which a pixel is treated as background. Only used with
+    /// `--transparent`.
+    #[arg(long, default_value = "200", requires = "transparent")]
+    pub tolerance: f64,
+    /// Enable channel-based spill suppression on the edge band.
+    #[arg(long, requires = "transparent")]
+    pub despill: bool,
+    /// Edge-band radius (pixels) for `--despill`.
+    #[arg(long, default_value = "3", requires = "despill")]
+    pub despill_band: u32,
+    /// Morphologically erode each transparent crop's opaque region by
+    /// this many pixels.
+    #[arg(long, default_value = "0", requires = "transparent")]
+    pub shrink: u32,
 }
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
@@ -144,7 +165,21 @@ pub fn run(args: SplitArgs) -> Result<()> {
     let mut total_size = 0u64;
     let mut saved_paths = Vec::new();
     for (name, obj) in names.iter().zip(result.objects.iter()) {
-        let cropped = split::crop_padded(&img, obj, max_w, max_h, result.background);
+        let cropped = if args.transparent {
+            crop_padded_transparent(
+                &img,
+                obj,
+                max_w,
+                max_h,
+                result.background,
+                args.tolerance,
+                args.despill,
+                args.despill_band,
+                args.shrink,
+            )
+        } else {
+            split::crop_padded(&img, obj, max_w, max_h, result.background)
+        };
         let path = args.output.join(format!("{name}.png"));
         ensure_parent(&path)?;
         cropped
@@ -186,6 +221,41 @@ fn preview_path(input: &std::path::Path) -> PathBuf {
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| "image".to_string());
     parent.join(format!("{stem}-preview.png"))
+}
+
+/// Crop `obj` from `img` onto a fully transparent `target_w × target_h`
+/// canvas, keying out `background` from the cropped content. Mirrors
+/// `split::crop_padded` but produces an RGBA image where the background
+/// color is alpha=0 instead of filled.
+#[allow(clippy::too_many_arguments)]
+fn crop_padded_transparent(
+    img: &DynamicImage,
+    obj: &split::DetectedObject,
+    target_w: u32,
+    target_h: u32,
+    background: [u8; 3],
+    tolerance: f64,
+    despill: bool,
+    despill_band: u32,
+    shrink: u32,
+) -> DynamicImage {
+    let mut cropped = img.crop_imm(obj.x, obj.y, obj.w, obj.h).to_rgba8();
+    transparent::apply_transparency_to_rgba(
+        &mut cropped,
+        background,
+        tolerance,
+        despill,
+        despill_band,
+        shrink,
+    );
+
+    let tw = target_w.max(obj.w);
+    let th = target_h.max(obj.h);
+    let mut canvas = RgbaImage::from_pixel(tw, th, Rgba([0, 0, 0, 0]));
+    let off_x = (tw - obj.w) / 2;
+    let off_y = (th - obj.h) / 2;
+    image::imageops::overlay(&mut canvas, &cropped, off_x as i64, off_y as i64);
+    DynamicImage::ImageRgba8(canvas)
 }
 
 fn median_width(objs: &[split::DetectedObject]) -> f64 {
