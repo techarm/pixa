@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.6](https://github.com/techarm/pixa/compare/v0.1.5...v0.1.6) - 2026-04-15
 
-### Other
+### Fixed
 
 - *(convert)* Preserve alpha channel when converting to WebP. ([#12](https://github.com/techarm/pixa/pull/12))
 
