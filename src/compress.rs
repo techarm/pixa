@@ -168,11 +168,19 @@ mod tests {
     use tempfile::TempDir;
 
     fn transparent_half_image(w: u32, h: u32) -> DynamicImage {
+        // High-entropy RGB pattern + hard alpha split. The entropy is
+        // load-bearing: a low-entropy image (e.g. solid colour + alpha
+        // split) compresses smaller as PNG than as WebP, which would
+        // trip `compress_image`'s kept-original fallback and bypass
+        // the `encode_webp` path this test is supposed to cover.
         let mut img = RgbaImage::new(w, h);
         for y in 0..h {
             for x in 0..w {
+                let r = ((x * 13).wrapping_mul(y * 17 + 1) % 256) as u8;
+                let g = ((x * 29) ^ (y * 31)) as u8;
+                let b = ((x + y) * 71 % 256) as u8;
                 let alpha = if x < w / 2 { 255 } else { 0 };
-                img.put_pixel(x, y, Rgba([255, 0, 0, alpha]));
+                img.put_pixel(x, y, Rgba([r, g, b, alpha]));
             }
         }
         DynamicImage::ImageRgba8(img)

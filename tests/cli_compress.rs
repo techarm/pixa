@@ -95,6 +95,43 @@ fn compress_recursive_mirrors_directory() {
 }
 
 #[test]
+fn compress_transparent_png_to_webp_preserves_alpha() {
+    // Symptom-level coverage required by CLAUDE.md's Bug Fix Checklist:
+    // exercise the exact CLI invocation that originally dropped alpha
+    // so the full argument-parsing / format-selection /
+    // kept-original path is protected.
+    let dir = TempDir::new().unwrap();
+    let input = dir.path().join("in.png");
+    let output = dir.path().join("out.webp");
+    common::write_image(&common::gradient_rgba(256, 256), &input);
+
+    Command::cargo_bin("pixa")
+        .unwrap()
+        .args([
+            "compress",
+            input.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let bytes = std::fs::read(&output).unwrap();
+    assert_eq!(
+        &bytes[..4],
+        b"RIFF",
+        "output must be real WebP, not a kept-original PNG copy"
+    );
+    assert_eq!(&bytes[8..12], b"WEBP");
+
+    let decoded = image::open(&output).unwrap();
+    assert!(
+        decoded.color().has_alpha(),
+        "pixa compress ... -o *.webp must preserve alpha on RGBA inputs"
+    );
+}
+
+#[test]
 fn compress_missing_input_fails() {
     Command::cargo_bin("pixa")
         .unwrap()
