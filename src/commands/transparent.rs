@@ -17,8 +17,9 @@ pub struct TransparentArgs {
     /// Recursively process directories
     #[arg(short, long)]
     pub recursive: bool,
-    /// Background color to key out as `#RRGGBB`. If omitted, the color
-    /// is auto-detected from the image's corner patches.
+    /// Background color to key out, as `#RRGGBB` or `RRGGBB`. If
+    /// omitted, the color is auto-detected from the image's corner
+    /// patches.
     #[arg(long)]
     pub bg: Option<String>,
     /// RGB-space distance from the detected background colour at or
@@ -46,10 +47,9 @@ pub struct TransparentArgs {
 
 pub fn run(args: TransparentArgs) -> Result<()> {
     let bg_override = match &args.bg {
-        Some(s) => Some(
-            transparent::parse_hex_color(s)
-                .ok_or_else(|| anyhow::anyhow!("Invalid --bg color (expected #RRGGBB): {s}"))?,
-        ),
+        Some(s) => Some(transparent::parse_hex_color(s).ok_or_else(|| {
+            anyhow::anyhow!("Invalid --bg color (expected #RRGGBB or RRGGBB): {s}")
+        })?),
         None => None,
     };
 
@@ -216,11 +216,15 @@ fn print_report(input: &Path, output: &Path, r: &Report, batch: bool) {
     );
 }
 
-/// Produce the output path for a given input.
+/// Produce the output path for a given input. Transparency requires
+/// an alpha channel, so the returned path always has a `.png`
+/// extension — any other extension on `--output` is coerced.
 ///
-/// - If `--output` points at a file (single-input case), use it as-is.
+/// - If `--output` points at a file (single-input case), use it with
+///   the extension forced to `.png`.
 /// - If `--output` points at a directory (or batch mode), mirror the
-///   input's relative location under it and force a `.png` extension.
+///   input's relative location under it with extension forced to
+///   `.png`.
 /// - If `--output` is omitted, write to `<input>.transparent.png`
 ///   (single file) or mirror into `<input>.transparent/` (directory).
 fn resolve_output(

@@ -13,7 +13,9 @@
 //! 2. Flood-fill (4-connectivity) from the four image corners through
 //!    every pixel whose RGB-space distance from the background is at
 //!    or below `tolerance`.
-//! 3. Set the alpha of every flooded pixel to 0.
+//! 3. Set the alpha of every flooded pixel to 0. RGB is preserved so
+//!    downstream resampling does not bleed a black halo across the
+//!    transparency boundary.
 //! 4. Optional `despill`: for pixels within `despill_band` of the
 //!    flooded region, subtract the bg-aligned colour component so AA
 //!    contamination (pink fringes on a magenta key etc.) is
@@ -252,13 +254,19 @@ pub fn apply_transparency_to_rgba(
         grow_flood(&mut flooded, shrink, w, h);
     }
 
-    // Pass 5: write zero-alpha to every flooded pixel; everything else
-    // is untouched.
+    // Pass 5: clear alpha on every flooded pixel; everything else is
+    // untouched. RGB of flooded pixels is preserved so that downstream
+    // resampling (e.g. `pixa compress --max`) does not bleed a black
+    // halo from (0,0,0) transparent pixels into the opaque edges —
+    // a common pitfall when alpha-ignorant filters blend RGB across
+    // the transparency boundary.
     for y in 0..h {
         for x in 0..w {
             let i = (y as usize) * (w as usize) + (x as usize);
             if flooded[i] {
-                img.put_pixel(x, y, image::Rgba([0, 0, 0, 0]));
+                let mut p = *img.get_pixel(x, y);
+                p[3] = 0;
+                img.put_pixel(x, y, p);
             }
         }
     }
