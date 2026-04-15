@@ -15,7 +15,7 @@ prefix determines whether a release is triggered:
 
 | Prefix | Version bump (0.x) | Version bump (≥1.0) | Example |
 |---|---|---|---|
-| `feat!:` / `BREAKING CHANGE` | minor (0.1.x → 0.2.0) | major | `feat!: drop --legacy flag` |
+| `feat!:` | minor (0.1.x → 0.2.0) | major | `feat!: drop --legacy flag` |
 | `feat:` | patch (0.1.3 → 0.1.4) | minor | `feat: add resize command` |
 | `fix:` | patch | patch | `fix: compress panics on empty file` |
 | `docs:` | none | none | `docs: update README` |
@@ -25,6 +25,20 @@ prefix determines whether a release is triggered:
 | `refactor:` | none | none | `refactor: extract helper` |
 
 Scope is optional: `feat(split):`, `fix(compress):`, etc.
+
+A commit is also considered breaking — and gets the same bump as a
+`!` prefix — if its **body** contains a `BREAKING CHANGE: <what>`
+footer. Either form works, pick whichever reads better:
+
+```
+# Prefix form
+feat!: drop --legacy flag
+
+# Footer form (preferred when the explanation is long)
+feat: drop --legacy flag
+
+BREAKING CHANGE: --legacy is no longer accepted. Use --modern instead.
+```
 
 > **0.x pre-release note.** release-plz follows semver's "anything
 > can change in 0.x" rule: `feat:` and `fix:` both trigger a patch
