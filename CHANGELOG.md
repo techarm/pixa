@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Other
 
-- *(CONVERT)* PRESERVE ALPHA CHANNEL WHEN CONVERTING TO WEBP (#12)
+- *(convert)* Preserve alpha channel when converting to WebP. ([#12](https://github.com/techarm/pixa/pull/12))
 
 ## [0.1.5](https://github.com/techarm/pixa/compare/v0.1.4...v0.1.5) - 2026-04-15
 
