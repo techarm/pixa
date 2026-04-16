@@ -11,11 +11,11 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum InfoError {
-    #[error("IO error: {0}")]
+    #[error(transparent)]
     Io(#[from] std::io::Error),
-    #[error("Image error: {0}")]
+    #[error(transparent)]
     Image(#[from] image::ImageError),
-    #[error("EXIF error: {0}")]
+    #[error("EXIF: {0}")]
     Exif(String),
 }
 

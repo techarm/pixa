@@ -13,11 +13,11 @@ use tracing::info;
 
 #[derive(Error, Debug)]
 pub enum FaviconError {
-    #[error("Image error: {0}")]
+    #[error(transparent)]
     Image(#[from] image::ImageError),
-    #[error("IO error: {0}")]
+    #[error(transparent)]
     Io(#[from] std::io::Error),
-    #[error("PNG optimization error: {0}")]
+    #[error("PNG optimization: {0}")]
     PngOptimize(String),
     #[error("Input image too small: {0}x{1} (need at least 16x16)")]
     TooSmall(u32, u32),

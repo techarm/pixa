@@ -39,16 +39,9 @@ pub fn run(args: CompressArgs) -> Result<()> {
             .ok_or_else(|| anyhow::anyhow!("--output is required when input is @clipboard"))?;
         ensure_parent(&out_path)?;
         let img = source.load_image()?;
-        match compress_image_dynamic(&img, &out_path, args.max) {
-            Ok(r) => {
-                print_clipboard_line(&out_path, &r);
-                return Ok(());
-            }
-            Err(e) => {
-                eprintln!("{} @clipboard: {}", fail_mark(), red(&e.to_string()));
-                return Err(anyhow::anyhow!(e));
-            }
-        }
+        let result = compress_image_dynamic(&img, &out_path, args.max)?;
+        print_clipboard_line(&out_path, &result);
+        return Ok(());
     }
 
     let inputs = collect_inputs(&args.input, args.recursive)?;
@@ -84,7 +77,12 @@ pub fn run(args: CompressArgs) -> Result<()> {
     for input in &inputs {
         let out_path = mirror_path(input, input_root, Some(&output_root));
         if let Err(e) = ensure_parent(&out_path) {
-            eprintln!("{} {}: {e}", fail_mark(), input.display());
+            eprintln!(
+                "{} {}: {}",
+                fail_mark(),
+                input.display(),
+                red(&e.to_string())
+            );
             failed += 1;
             continue;
         }
@@ -123,21 +121,9 @@ pub fn run(args: CompressArgs) -> Result<()> {
 }
 
 fn process_one(input: &Path, output: &Path, max_edge: Option<u32>) -> Result<()> {
-    match compress_image(input, output, max_edge) {
-        Ok(r) => {
-            print_line(input, output, &r);
-            Ok(())
-        }
-        Err(e) => {
-            eprintln!(
-                "{} {}: {}",
-                fail_mark(),
-                input.display(),
-                red(&e.to_string())
-            );
-            Err(anyhow::anyhow!(e))
-        }
-    }
+    let r = compress_image(input, output, max_edge)?;
+    print_line(input, output, &r);
+    Ok(())
 }
 
 fn print_clipboard_line(output: &Path, r: &pixa::compress::CompressResult) {

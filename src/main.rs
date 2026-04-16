@@ -4,7 +4,9 @@ use anyhow::Result;
 use clap::{CommandFactory, Parser, Subcommand};
 
 use commands::{
-    completions, compress, convert, detect, favicon, info, install, paste, remove_watermark, split,
+    completions, compress, convert, detect, error, favicon, info, install, paste, remove_watermark,
+    split,
+    style::{error_prefix, hint_prefix},
     transparent,
 };
 
@@ -76,7 +78,14 @@ enum Commands {
     Completions(completions::CompletionsArgs),
 }
 
-fn main() -> Result<()> {
+fn main() {
+    if let Err(e) = run() {
+        report_error(&e);
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<()> {
     let cli = Cli::parse();
 
     let filter = if cli.verbose { "debug" } else { "warn" };
@@ -105,5 +114,19 @@ fn main() -> Result<()> {
             let mut cmd = Cli::command();
             completions::run(a, &mut cmd)
         }
+    }
+}
+
+/// Render an error in the unified git-style format:
+///
+/// ```text
+/// error: <message>
+///   hint: <hint>   (zero or more)
+/// ```
+fn report_error(err: &anyhow::Error) {
+    let (msg, hints) = error::unpack(err);
+    eprintln!("{} {}", error_prefix(), msg);
+    for hint in hints {
+        eprintln!("  {} {}", hint_prefix(), hint);
     }
 }

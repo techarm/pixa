@@ -2,6 +2,7 @@ pub mod completions;
 pub mod compress;
 pub mod convert;
 pub mod detect;
+pub mod error;
 pub mod favicon;
 pub mod info;
 pub mod input;
@@ -12,6 +13,7 @@ pub mod split;
 pub mod style;
 pub mod transparent;
 
+pub use error::bail_with_hints;
 pub use input::ImageSource;
 
 use anyhow::Result;

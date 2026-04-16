@@ -26,11 +26,11 @@ const WEBP_QUALITY: u8 = 80;
 pub enum CompressError {
     #[error("Unsupported format: {0}")]
     UnsupportedFormat(String),
-    #[error("Image error: {0}")]
+    #[error(transparent)]
     Image(#[from] image::ImageError),
-    #[error("IO error: {0}")]
+    #[error(transparent)]
     Io(#[from] std::io::Error),
-    #[error("PNG optimization error: {0}")]
+    #[error("PNG optimization: {0}")]
     PngOptimize(String),
 }
 

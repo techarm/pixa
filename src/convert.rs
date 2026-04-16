@@ -13,11 +13,11 @@ pub enum ConvertError {
     UnsupportedInput(String),
     #[error("Unsupported output format: {0}")]
     UnsupportedOutput(String),
-    #[error("Image error: {0}")]
+    #[error(transparent)]
     Image(#[from] image::ImageError),
-    #[error("IO error: {0}")]
+    #[error(transparent)]
     Io(#[from] std::io::Error),
-    #[error("WebP encoding error")]
+    #[error("WebP encoding failed")]
     WebpEncode,
 }
 

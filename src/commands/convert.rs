@@ -73,7 +73,12 @@ pub fn run(args: ConvertArgs) -> Result<()> {
         let mut out_path = mirror_path(input, input_root, Some(&args.output));
         out_path.set_extension(format);
         if let Err(e) = ensure_parent(&out_path) {
-            eprintln!("{} {}: {e}", fail_mark(), input.display());
+            eprintln!(
+                "{} {}: {}",
+                fail_mark(),
+                input.display(),
+                red(&e.to_string())
+            );
             failed += 1;
             continue;
         }

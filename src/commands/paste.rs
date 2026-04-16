@@ -44,13 +44,12 @@ pub fn run(args: PasteArgs) -> Result<()> {
     // clipboard has native PNG bytes. Skips decode + re-encode entirely.
     if matches!(format, ImageFormat::Png)
         && args.format.is_none()
-        && let Some(bytes) =
-            pixa::clipboard::read_native_png().context("Failed to read image from clipboard")?
+        && let Some(bytes) = pixa::clipboard::read_native_png()?
     {
         return write_target(&target, &bytes);
     }
 
-    let img = pixa::clipboard::read_image().context("Failed to read image from clipboard")?;
+    let img = pixa::clipboard::read_image()?;
     let bytes = encode(&img, format)?;
     write_target(&target, &bytes)
 }

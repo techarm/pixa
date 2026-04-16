@@ -5,9 +5,8 @@ use pixa::split::{self, PreviewStyle, SplitOptions};
 use pixa::transparent;
 use std::path::PathBuf;
 
-use super::ImageSource;
-use super::style::{arrow, cyan, dim, fail_mark, green, ok_mark, red};
-use super::{ensure_parent, format_size};
+use super::style::{arrow, cyan, dim, green, ok_mark, red};
+use super::{ImageSource, bail_with_hints, ensure_parent, format_size};
 
 #[derive(Args)]
 pub struct SplitArgs {
@@ -87,18 +86,18 @@ pub fn run(args: SplitArgs) -> Result<()> {
     let result = match split::detect_objects(&img, &opts) {
         Ok(r) => r,
         Err(e) => {
-            // Auto-write preview on failure to help diagnosis.
+            // Auto-write a preview on failure to help diagnosis. Hints
+            // are surfaced via the unified error channel so main() can
+            // render them next to `error:` in the git-style format.
             let preview_out = preview_path(&source);
-            // Run a no-expectation pass purely for visualization.
+            let mut hints: Vec<String> = Vec::new();
             if let Ok(diag) = split::detect_objects(&img, &SplitOptions::default()) {
-                let _ = split::write_preview(&img, &diag, PreviewStyle::Detected, &preview_out);
-                eprintln!("{} {}", fail_mark(), e);
-                eprintln!("  preview written: {}", preview_out.display());
-                eprintln!("  hint: try --padding or pass --names to enable re-split");
-            } else {
-                eprintln!("{} {}", fail_mark(), e);
+                if split::write_preview(&img, &diag, PreviewStyle::Detected, &preview_out).is_ok() {
+                    hints.push(format!("preview written: {}", preview_out.display()));
+                }
+                hints.push("try --padding or pass --names to enable re-split".to_string());
             }
-            std::process::exit(1);
+            return Err(bail_with_hints(e.to_string(), hints));
         }
     };
 

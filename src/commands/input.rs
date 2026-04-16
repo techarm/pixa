@@ -36,9 +36,10 @@ impl ImageSource {
     /// directory semantics must branch on `is_clipboard()` first.
     pub fn load_image(&self) -> Result<DynamicImage> {
         match self {
-            Self::Clipboard => {
-                Ok(pixa::clipboard::read_image().context("Failed to read image from clipboard")?)
-            }
+            // `ClipboardError`'s Display is already a complete user-facing
+            // message (e.g. "Clipboard is empty or does not contain an
+            // image") — wrapping with `.context()` would only add noise.
+            Self::Clipboard => Ok(pixa::clipboard::read_image()?),
             Self::Path(p) => {
                 image::open(p).with_context(|| format!("Failed to open: {}", p.display()))
             }

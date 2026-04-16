@@ -20,9 +20,9 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum SplitError {
-    #[error("Image error: {0}")]
+    #[error(transparent)]
     Image(#[from] image::ImageError),
-    #[error("IO error: {0}")]
+    #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(
         "Detected {detected} objects but expected {expected}. \

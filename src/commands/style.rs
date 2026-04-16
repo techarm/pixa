@@ -86,3 +86,15 @@ pub fn skip_mark() -> String {
 pub fn arrow() -> String {
     dim("→")
 }
+
+/// Git-style fatal error prefix, e.g. `error:` in bold coral.
+/// Used for one-line errors bubbled up to `main()`.
+pub fn error_prefix() -> String {
+    paint_sgr("1", &red("error:"))
+}
+
+/// Git-style hint prefix, e.g. `hint:` in dim. Used for optional
+/// follow-up lines under an `error:` message.
+pub fn hint_prefix() -> String {
+    dim("hint:")
+}
