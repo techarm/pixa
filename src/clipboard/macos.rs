@@ -76,6 +76,16 @@ pub(super) fn read_file_url() -> Result<Option<PathBuf>, ClipboardError> {
         let Some(url) = NSURL::URLWithString(&url_str) else {
             return Ok(None);
         };
+        // Guard against non-file URLs (e.g. an `https://…` link that an
+        // app mistakenly stored under `public.file-url`). `NSURL.path`
+        // would still return a plausible-looking path component for
+        // those, which would then fail with a confusing open error.
+        let Some(scheme) = url.scheme() else {
+            return Ok(None);
+        };
+        if scheme.to_string() != "file" {
+            return Ok(None);
+        }
         let Some(ns_path) = url.path() else {
             return Ok(None);
         };
