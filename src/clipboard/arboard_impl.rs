@@ -12,17 +12,14 @@ pub(super) fn read_image() -> Result<DynamicImage, ClipboardError> {
     let mut cb =
         arboard::Clipboard::new().map_err(|e| ClipboardError::Unavailable(e.to_string()))?;
     let data = cb.get_image().map_err(map_get_err)?;
-    let rgba = RgbaImage::from_raw(
-        data.width as u32,
-        data.height as u32,
-        data.bytes.into_owned(),
-    )
-    .ok_or_else(|| {
+    let expected_len = data.width.saturating_mul(data.height).saturating_mul(4);
+    let width = data.width as u32;
+    let height = data.height as u32;
+    let bytes = data.bytes.into_owned();
+    let actual_len = bytes.len();
+    let rgba = RgbaImage::from_raw(width, height, bytes).ok_or_else(|| {
         ClipboardError::Decode(format!(
-            "arboard returned {} bytes for {}x{} image",
-            data.width * data.height * 4,
-            data.width,
-            data.height
+            "arboard returned {actual_len} bytes for {width}x{height} image (expected {expected_len})"
         ))
     })?;
     Ok(DynamicImage::ImageRgba8(rgba))

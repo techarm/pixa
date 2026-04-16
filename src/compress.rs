@@ -111,9 +111,12 @@ fn encode_for_output(
     output: &Path,
     max_edge: Option<u32>,
 ) -> Result<Vec<u8>, CompressError> {
-    let resized = max_edge
-        .and_then(|limit| resize_to_max_edge(img, limit))
-        .unwrap_or_else(|| img.clone());
+    // Borrow the resized image if resize_to_max_edge produced one,
+    // otherwise use the caller's &DynamicImage in place. Avoids a
+    // full deep copy of the pixel buffer on the common no-resize
+    // path — significant for 4K+ inputs.
+    let resized = max_edge.and_then(|limit| resize_to_max_edge(img, limit));
+    let img_ref: &DynamicImage = resized.as_ref().unwrap_or(img);
 
     let ext = output
         .extension()
@@ -122,9 +125,9 @@ fn encode_for_output(
         .to_lowercase();
 
     match ext.as_str() {
-        "jpg" | "jpeg" => encode_jpeg(&resized, JPEG_QUALITY),
-        "png" => encode_png(&resized, PNG_LEVEL),
-        "webp" => encode_webp(&resized, WEBP_QUALITY),
+        "jpg" | "jpeg" => encode_jpeg(img_ref, JPEG_QUALITY),
+        "png" => encode_png(img_ref, PNG_LEVEL),
+        "webp" => encode_webp(img_ref, WEBP_QUALITY),
         other => Err(CompressError::UnsupportedFormat(other.to_string())),
     }
 }

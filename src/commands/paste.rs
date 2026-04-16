@@ -54,9 +54,19 @@ pub fn run(args: PasteArgs) -> Result<()> {
         if let Target::File(out_path) = &target
             && extensions_match(&src_path, out_path)
         {
-            let bytes = std::fs::read(&src_path)
-                .with_context(|| format!("Failed to read: {}", src_path.display()))?;
-            return write_target(&target, &bytes);
+            // Stream the source file directly to disk — avoids loading
+            // potentially very large images (e.g. full-resolution
+            // camera originals) into memory just to write them back out.
+            ensure_parent(out_path)?;
+            let bytes_copied = std::fs::copy(&src_path, out_path).with_context(|| {
+                format!(
+                    "Failed to copy {} to {}",
+                    src_path.display(),
+                    out_path.display()
+                )
+            })?;
+            print_file_written(out_path, bytes_copied);
+            return Ok(());
         }
         let img = image::open(&src_path)
             .with_context(|| format!("Failed to open: {}", src_path.display()))?;
@@ -77,6 +87,16 @@ pub fn run(args: PasteArgs) -> Result<()> {
     let img = pixa::clipboard::read_image()?;
     let bytes = encode(&img, format)?;
     write_target(&target, &bytes)
+}
+
+fn print_file_written(path: &std::path::Path, size: u64) {
+    println!(
+        "{} @clipboard {} {}  {}",
+        ok_mark(),
+        arrow(),
+        green(&path.display().to_string()),
+        red(&format_size(size)),
+    );
 }
 
 /// True if `src` and `dst` resolve to the same normalized image
@@ -133,13 +153,7 @@ fn write_target(target: &Target, bytes: &[u8]) -> Result<()> {
             ensure_parent(path)?;
             std::fs::write(path, bytes)
                 .with_context(|| format!("Failed to write: {}", path.display()))?;
-            println!(
-                "{} @clipboard {} {}  {}",
-                ok_mark(),
-                arrow(),
-                green(&path.display().to_string()),
-                red(&format_size(bytes.len() as u64)),
-            );
+            print_file_written(path, bytes.len() as u64);
         }
     }
     Ok(())

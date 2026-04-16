@@ -45,14 +45,18 @@ where
 }
 
 /// Extract the user-facing message and hint list from an anyhow error.
-/// If the error is (or wraps) a `CliError`, its structured fields are
-/// returned. Otherwise the anyhow chain is flattened into a single
-/// line, skipping any layer whose `Display` is already a suffix of the
-/// previous layer — this avoids `"Foo: bar: bar"` artifacts when an
-/// error type's `Display` includes its inner's message verbatim.
+/// If any layer in the error chain is a `CliError`, its structured
+/// fields are returned — walking the chain (rather than only checking
+/// the top) lets hints survive `.context()` wrapping. Otherwise the
+/// chain is flattened into a single line, skipping any layer whose
+/// `Display` is already a suffix of the previous layer to avoid
+/// `"Foo: bar: bar"` artifacts when an error type's `Display`
+/// includes its inner's message verbatim.
 pub fn unpack(err: &anyhow::Error) -> (String, Vec<String>) {
-    if let Some(cli) = err.downcast_ref::<CliError>() {
-        return (cli.message.clone(), cli.hints.clone());
+    for cause in err.chain() {
+        if let Some(cli) = cause.downcast_ref::<CliError>() {
+            return (cli.message.clone(), cli.hints.clone());
+        }
     }
     let mut parts: Vec<String> = Vec::new();
     for cause in err.chain() {
@@ -70,4 +74,37 @@ pub fn unpack(err: &anyhow::Error) -> (String, Vec<String>) {
         parts.push(s);
     }
     (parts.join(": "), Vec::new())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unpack_extracts_cli_error_fields() {
+        let err = bail_with_hints("boom", ["try X", "or Y"]);
+        let (msg, hints) = unpack(&err);
+        assert_eq!(msg, "boom");
+        assert_eq!(hints, vec!["try X".to_string(), "or Y".to_string()]);
+    }
+
+    #[test]
+    fn unpack_walks_chain_to_find_cli_error_under_context() {
+        // A CliError with hints, wrapped by anyhow::Context. Without
+        // chain-walking the hints would be silently dropped.
+        let err: anyhow::Error =
+            bail_with_hints("underlying", ["one", "two"]).context("while doing X");
+        let (msg, hints) = unpack(&err);
+        assert_eq!(msg, "underlying");
+        assert_eq!(hints, vec!["one".to_string(), "two".to_string()]);
+    }
+
+    #[test]
+    fn unpack_falls_back_to_flattened_chain_for_non_cli_errors() {
+        let inner = std::io::Error::new(std::io::ErrorKind::NotFound, "missing");
+        let err: anyhow::Error = anyhow::Error::new(inner).context("could not read");
+        let (msg, hints) = unpack(&err);
+        assert_eq!(msg, "could not read: missing");
+        assert!(hints.is_empty());
+    }
 }
