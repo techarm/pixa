@@ -80,10 +80,12 @@ pub(super) fn read_file_url() -> Result<Option<PathBuf>, ClipboardError> {
         // app mistakenly stored under `public.file-url`). `NSURL.path`
         // would still return a plausible-looking path component for
         // those, which would then fail with a confusing open error.
+        // URL schemes are case-insensitive per RFC 3986, so a `FILE:`
+        // or `File:` prefix should match too.
         let Some(scheme) = url.scheme() else {
             return Ok(None);
         };
-        if scheme.to_string() != "file" {
+        if !scheme.to_string().eq_ignore_ascii_case("file") {
             return Ok(None);
         }
         let Some(ns_path) = url.path() else {

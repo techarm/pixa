@@ -84,12 +84,21 @@ pub fn tmp_png(w: u32, h: u32) -> (TempDir, std::path::PathBuf) {
 
 /// Guard that serializes clipboard access across parallel tests.
 ///
-/// The OS clipboard is a single process-wide resource. Without
-/// serialization, parallel tests race — one test sets a 96×72 image,
-/// another test overwrites it with 256×256 before the first asserts
-/// dimensions. Every clipboard-touching test must hold this lock for
-/// its entire lifetime: call `let _lock = common::clipboard_lock();`
-/// as the first line of the test.
+/// The OS clipboard is a single resource shared across the entire
+/// user session — every process attached to that session reads and
+/// writes the same pasteboard. Without serialization, parallel tests
+/// in this binary race: one test sets a 96×72 image, another test
+/// overwrites it with 256×256 before the first asserts dimensions.
+/// Every clipboard-touching test must hold this lock for its entire
+/// lifetime: call `let _lock = common::clipboard_lock();` as the
+/// first line of the test.
+///
+/// Scope limitation: this `Mutex` only serializes within the current
+/// test binary. It does *not* protect against another process (or
+/// another `cargo test --test …` binary running in parallel) touching
+/// the same pasteboard. We rely on `cli_clipboard.rs` being the only
+/// clipboard-using test binary in the project; if a second one is
+/// added, swap to a lockfile-based mechanism.
 #[cfg(target_os = "macos")]
 pub fn clipboard_lock() -> std::sync::MutexGuard<'static, ()> {
     use std::sync::Mutex;

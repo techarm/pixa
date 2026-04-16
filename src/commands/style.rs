@@ -89,8 +89,19 @@ pub fn arrow() -> String {
 
 /// Git-style fatal error prefix, e.g. `error:` in bold coral.
 /// Used for one-line errors bubbled up to `main()`.
+///
+/// Bold + truecolor are emitted as a *single* combined SGR sequence
+/// (`\x1b[1;38;2;R;G;Bm…\x1b[0m`). Wrapping `red("error:")` in
+/// `paint_sgr("1", …)` would put the bold reset *after* `red`'s
+/// inner `\x1b[0m`, which cancels the bold attribute prematurely
+/// and leaves `error:` rendered without weight.
 pub fn error_prefix() -> String {
-    paint_sgr("1", &red("error:"))
+    if color_enabled() {
+        let (r, g, b) = CORAL;
+        format!("\x1b[1;38;2;{r};{g};{b}merror:\x1b[0m")
+    } else {
+        "error:".to_string()
+    }
 }
 
 /// Git-style hint prefix, e.g. `hint:` in dim. Used for optional
