@@ -4,7 +4,7 @@ use pixa::watermark::{WatermarkEngine, WatermarkSize};
 use std::path::{Path, PathBuf};
 
 use super::ImageSource;
-use super::style::{arrow, bold, dim, fail_mark, green, ok_mark, red, skip_mark, yellow};
+use super::style::{arrow, bold, dim, err, green, ok_mark, red, skip_mark, yellow};
 use super::{collect_inputs, ensure_parent, guard_clipboard_not_directory, mirror_path};
 
 #[derive(Args)]
@@ -137,9 +137,9 @@ pub fn run(args: RemoveWatermarkArgs) -> Result<()> {
                 failed += 1;
                 eprintln!(
                     "{} {}: {}",
-                    fail_mark(),
+                    err::fail_mark(),
                     input.display(),
-                    red(&e.to_string())
+                    err::red(&e.to_string())
                 );
             }
         }

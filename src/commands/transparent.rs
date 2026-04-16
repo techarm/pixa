@@ -5,7 +5,7 @@ use pixa::transparent::{self, TransparentOptions};
 use std::path::{Path, PathBuf};
 
 use super::ImageSource;
-use super::style::{arrow, bold, cyan, dim, fail_mark, green, ok_mark, red, yellow};
+use super::style::{arrow, bold, cyan, dim, err, green, ok_mark, red, yellow};
 use super::{
     collect_inputs, ensure_parent, format_size, guard_clipboard_not_directory, mirror_path,
 };
@@ -120,9 +120,9 @@ pub fn run(args: TransparentArgs) -> Result<()> {
                 failed += 1;
                 eprintln!(
                     "{} {}: {}",
-                    fail_mark(),
+                    err::fail_mark(),
                     input.display(),
-                    red(&e.to_string())
+                    err::red(&e.to_string())
                 );
             }
         }

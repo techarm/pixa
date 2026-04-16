@@ -3,7 +3,7 @@ use clap::Args;
 use pixa::compress::{compress_image, compress_image_dynamic};
 use std::path::{Path, PathBuf};
 
-use super::style::{arrow, bold, dim, fail_mark, green, ok_mark, red, skip_mark, yellow};
+use super::style::{arrow, bold, dim, err, green, ok_mark, red, skip_mark, yellow};
 use super::{
     ImageSource, collect_inputs, ensure_parent, format_size, guard_clipboard_not_directory,
     mirror_path,
@@ -80,9 +80,9 @@ pub fn run(args: CompressArgs) -> Result<()> {
         if let Err(e) = ensure_parent(&out_path) {
             eprintln!(
                 "{} {}: {}",
-                fail_mark(),
+                err::fail_mark(),
                 input.display(),
-                red(&e.to_string())
+                err::red(&e.to_string())
             );
             failed += 1;
             continue;
@@ -98,9 +98,9 @@ pub fn run(args: CompressArgs) -> Result<()> {
                 failed += 1;
                 eprintln!(
                     "{} {}: {}",
-                    fail_mark(),
+                    err::fail_mark(),
                     input.display(),
-                    red(&e.to_string())
+                    err::red(&e.to_string())
                 );
             }
         }

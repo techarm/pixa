@@ -144,10 +144,17 @@ fn resolve_format_and_target(args: &PasteArgs) -> Result<(ImageFormat, Target)> 
 fn write_target(target: &Target, bytes: &[u8]) -> Result<()> {
     match target {
         Target::Stdout => {
-            std::io::stdout()
-                .lock()
-                .write_all(bytes)
-                .context("Failed to write to stdout")?;
+            // Treat `BrokenPipe` as a normal exit: a downstream consumer
+            // (`pixa paste - --format png | head -c 10`) may close the
+            // pipe before we finish writing, and a CLI shouldn't
+            // surface that as an error to the user.
+            let mut stdout = std::io::stdout().lock();
+            if let Err(e) = stdout.write_all(bytes) {
+                if e.kind() == std::io::ErrorKind::BrokenPipe {
+                    return Ok(());
+                }
+                return Err(e).context("Failed to write to stdout");
+            }
         }
         Target::File(path) => {
             ensure_parent(path)?;

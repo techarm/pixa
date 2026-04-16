@@ -3,7 +3,7 @@ use clap::Args;
 use pixa::convert::{convert_image, convert_image_from_dynamic};
 use std::path::PathBuf;
 
-use super::style::{arrow, bold, dim, fail_mark, green, ok_mark, red, yellow};
+use super::style::{arrow, bold, dim, err, green, ok_mark, red, yellow};
 use super::{
     ImageSource, collect_inputs, ensure_parent, guard_clipboard_not_directory, mirror_path,
 };
@@ -76,9 +76,9 @@ pub fn run(args: ConvertArgs) -> Result<()> {
         if let Err(e) = ensure_parent(&out_path) {
             eprintln!(
                 "{} {}: {}",
-                fail_mark(),
+                err::fail_mark(),
                 input.display(),
-                red(&e.to_string())
+                err::red(&e.to_string())
             );
             failed += 1;
             continue;
@@ -98,9 +98,9 @@ pub fn run(args: ConvertArgs) -> Result<()> {
                 failed += 1;
                 eprintln!(
                     "{} {}: {}",
-                    fail_mark(),
+                    err::fail_mark(),
                     input.display(),
-                    red(&e.to_string())
+                    err::red(&e.to_string())
                 );
             }
         }
