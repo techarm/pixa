@@ -40,8 +40,33 @@ enum Target {
 pub fn run(args: PasteArgs) -> Result<()> {
     let (format, target) = resolve_format_and_target(&args)?;
 
-    // Byte-passthrough path: PNG target, no --format override, and the
-    // clipboard has native PNG bytes. Skips decode + re-encode entirely.
+    // Byte-passthrough path 1: user copied a FILE (Cmd+C in Finder).
+    // When the output extension matches the source file's extension
+    // and no --format override is in play, copy the source bytes
+    // verbatim — this preserves metadata (EXIF, ICC) that every other
+    // path would strip. When the extensions differ, fall through to
+    // opening the file and re-encoding to the target format (still
+    // lossless when possible, and far better than a TIFF preview
+    // routed through arboard).
+    if args.format.is_none()
+        && let Some(src_path) = pixa::clipboard::read_file_url()?
+    {
+        if let Target::File(out_path) = &target
+            && extensions_match(&src_path, out_path)
+        {
+            let bytes = std::fs::read(&src_path)
+                .with_context(|| format!("Failed to read: {}", src_path.display()))?;
+            return write_target(&target, &bytes);
+        }
+        let img = image::open(&src_path)
+            .with_context(|| format!("Failed to open: {}", src_path.display()))?;
+        let bytes = encode(&img, format)?;
+        return write_target(&target, &bytes);
+    }
+
+    // Byte-passthrough path 2: PNG target, no --format override, and
+    // the clipboard has native PNG bytes (e.g. Cmd+C from a browser).
+    // Skips decode + re-encode entirely.
     if matches!(format, ImageFormat::Png)
         && args.format.is_none()
         && let Some(bytes) = pixa::clipboard::read_native_png()?
@@ -52,6 +77,21 @@ pub fn run(args: PasteArgs) -> Result<()> {
     let img = pixa::clipboard::read_image()?;
     let bytes = encode(&img, format)?;
     write_target(&target, &bytes)
+}
+
+/// True if `src` and `dst` resolve to the same normalized image
+/// extension (jpg == jpeg, case-insensitive). Used to decide whether
+/// paste can copy file bytes verbatim.
+fn extensions_match(src: &std::path::Path, dst: &std::path::Path) -> bool {
+    let norm = |p: &std::path::Path| {
+        p.extension()
+            .and_then(|e| e.to_str())
+            .and_then(ImageFormat::from_extension)
+    };
+    match (norm(src), norm(dst)) {
+        (Some(a), Some(b)) => a == b,
+        _ => false,
+    }
 }
 
 fn resolve_format_and_target(args: &PasteArgs) -> Result<(ImageFormat, Target)> {

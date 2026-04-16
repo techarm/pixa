@@ -271,6 +271,93 @@ fn remove_watermark_clipboard_if_detected_skips_clean_image() {
         .stdout(predicate::str::contains("no watermark"));
 }
 
+// -------------------------------------------------------------------
+// File-URL clipboard (Finder Cmd+C on an image file)
+// -------------------------------------------------------------------
+
+#[test]
+fn paste_file_url_copies_bytes_when_extension_matches() {
+    let _lock = common::clipboard_lock();
+    // Write a known source file to disk, put its URL on the clipboard.
+    let dir = TempDir::new().unwrap();
+    let src = dir.path().join("source.png");
+    let source_bytes = encode_png(&common::gradient_rgb(40, 30));
+    std::fs::write(&src, &source_bytes).unwrap();
+    common::set_clipboard_file_url(&src);
+
+    let out = dir.path().join("out.png");
+    Command::cargo_bin("pixa")
+        .unwrap()
+        .args(["paste", out.to_str().unwrap()])
+        .assert()
+        .success();
+
+    let written = std::fs::read(&out).unwrap();
+    assert_eq!(
+        written, source_bytes,
+        "paste must copy the source file bytes verbatim when extensions match"
+    );
+}
+
+#[test]
+fn paste_file_url_reencodes_when_extension_differs() {
+    let _lock = common::clipboard_lock();
+    let dir = TempDir::new().unwrap();
+    let src = dir.path().join("source.png");
+    let source_bytes = encode_png(&common::gradient_rgb(32, 32));
+    std::fs::write(&src, &source_bytes).unwrap();
+    common::set_clipboard_file_url(&src);
+
+    let out = dir.path().join("out.webp");
+    Command::cargo_bin("pixa")
+        .unwrap()
+        .args(["paste", out.to_str().unwrap()])
+        .assert()
+        .success();
+
+    let bytes = std::fs::read(&out).unwrap();
+    assert_eq!(&bytes[..4], b"RIFF");
+    assert_eq!(&bytes[8..12], b"WEBP");
+}
+
+#[test]
+fn compress_file_url_reads_source_file() {
+    let _lock = common::clipboard_lock();
+    let dir = TempDir::new().unwrap();
+    let src = dir.path().join("source.png");
+    std::fs::write(&src, encode_png(&common::gradient_rgb(128, 128))).unwrap();
+    common::set_clipboard_file_url(&src);
+
+    let out = dir.path().join("out.webp");
+    Command::cargo_bin("pixa")
+        .unwrap()
+        .args(["compress", "@clipboard", "-o", out.to_str().unwrap()])
+        .assert()
+        .success();
+
+    let bytes = std::fs::read(&out).unwrap();
+    assert_eq!(&bytes[..4], b"RIFF");
+    assert_eq!(&bytes[8..12], b"WEBP");
+}
+
+#[test]
+fn file_url_with_percent_encoded_spaces_resolves() {
+    let _lock = common::clipboard_lock();
+    let dir = TempDir::new().unwrap();
+    // File name with a space forces percent-encoding (%20) in the URL.
+    let src = dir.path().join("my photo.png");
+    std::fs::write(&src, encode_png(&common::gradient_rgb(48, 48))).unwrap();
+    common::set_clipboard_file_url(&src);
+
+    let out = dir.path().join("out.png");
+    Command::cargo_bin("pixa")
+        .unwrap()
+        .args(["paste", out.to_str().unwrap()])
+        .assert()
+        .success();
+    assert!(out.exists());
+}
+
 #[test]
 fn favicon_clipboard_generates_icon_set() {
     let _lock = common::clipboard_lock();

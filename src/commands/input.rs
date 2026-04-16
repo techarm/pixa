@@ -36,10 +36,21 @@ impl ImageSource {
     /// directory semantics must branch on `is_clipboard()` first.
     pub fn load_image(&self) -> Result<DynamicImage> {
         match self {
-            // `ClipboardError`'s Display is already a complete user-facing
-            // message (e.g. "Clipboard is empty or does not contain an
-            // image") — wrapping with `.context()` would only add noise.
-            Self::Clipboard => Ok(pixa::clipboard::read_image()?),
+            Self::Clipboard => {
+                // If the user copied an image FILE (e.g. Cmd+C in Finder),
+                // the pasteboard carries a `public.file-url` pointing at
+                // the original file. Prefer that over arboard's decoded
+                // RGBA — it preserves the source bytes and metadata, and
+                // avoids pulling in a potentially lossy TIFF preview.
+                if let Some(path) = pixa::clipboard::read_file_url()? {
+                    return image::open(&path)
+                        .with_context(|| format!("Failed to open: {}", path.display()));
+                }
+                // `ClipboardError`'s Display is already a complete user-facing
+                // message (e.g. "Clipboard is empty or does not contain an
+                // image") — wrapping with `.context()` would only add noise.
+                Ok(pixa::clipboard::read_image()?)
+            }
             Self::Path(p) => {
                 image::open(p).with_context(|| format!("Failed to open: {}", p.display()))
             }

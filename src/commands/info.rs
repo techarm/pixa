@@ -20,11 +20,18 @@ pub struct InfoArgs {
 pub fn run(args: InfoArgs) -> Result<()> {
     let source = ImageSource::parse(&args.input);
     let info = if source.is_clipboard() {
-        let img = source.load_image()?;
-        // Re-encode to PNG so file_size and SHA-256 are deterministic and
-        // meaningful for clipboard input (no source file on disk).
-        let png_bytes = encode_to_png(&img)?;
-        get_image_info_from_image(&img, "@clipboard", Some(&png_bytes))
+        // If Finder put a file URL on the clipboard, report real file
+        // metadata (size, SHA of source bytes, EXIF) — same detail as
+        // `pixa info <path>`.
+        if let Some(path) = pixa::clipboard::read_file_url()? {
+            get_image_info(&path)?
+        } else {
+            let img = source.load_image()?;
+            // Otherwise re-encode the decoded RGBA to PNG so file_size
+            // and SHA-256 are deterministic for raw-pixel clipboard input.
+            let png_bytes = encode_to_png(&img)?;
+            get_image_info_from_image(&img, "@clipboard", Some(&png_bytes))
+        }
     } else {
         get_image_info(&args.input)?
     };

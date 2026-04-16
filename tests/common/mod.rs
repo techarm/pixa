@@ -140,3 +140,45 @@ pub fn set_clipboard_png_bytes(png: &[u8]) {
         let _ = pb.setData_forType(Some(&data), &png_type);
     }
 }
+
+/// Place a `public.file-url` entry on the macOS pasteboard, simulating
+/// a Finder Cmd+C on an image file. The URL points at `path` — the
+/// pasteboard only stores the URL, so `path` must exist on disk when
+/// the test reads it back.
+#[cfg(target_os = "macos")]
+pub fn set_clipboard_file_url(path: &Path) {
+    use objc2_app_kit::NSPasteboard;
+    use objc2_foundation::{NSArray, NSData, NSString};
+
+    // Build a `file://` URL with space characters percent-encoded so
+    // the test fixture exercises the same decoding path as real
+    // Finder output.
+    let encoded = percent_encode_path(path);
+    let url = format!("file://{encoded}");
+
+    unsafe {
+        let pb = NSPasteboard::generalPasteboard();
+        let empty: objc2::rc::Retained<NSArray<NSString>> = NSArray::new();
+        pb.declareTypes_owner(&empty, None);
+
+        let url_type = NSString::from_str("public.file-url");
+        let data = NSData::with_bytes(url.as_bytes());
+        let _ = pb.setData_forType(Some(&data), &url_type);
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn percent_encode_path(path: &Path) -> String {
+    let s = path.to_string_lossy();
+    let mut out = String::with_capacity(s.len());
+    for b in s.as_bytes() {
+        match b {
+            // Unreserved per RFC 3986 + `/` for path separator.
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b'/' => {
+                out.push(*b as char);
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
