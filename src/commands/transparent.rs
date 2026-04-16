@@ -1,14 +1,18 @@
 use anyhow::{Context, Result};
 use clap::Args;
+use image::DynamicImage;
 use pixa::transparent::{self, TransparentOptions};
 use std::path::{Path, PathBuf};
 
+use super::ImageSource;
 use super::style::{arrow, bold, cyan, dim, fail_mark, green, ok_mark, red, yellow};
-use super::{collect_inputs, ensure_parent, format_size, mirror_path};
+use super::{
+    collect_inputs, ensure_parent, format_size, guard_clipboard_not_directory, mirror_path,
+};
 
 #[derive(Args)]
 pub struct TransparentArgs {
-    /// Input image file or directory
+    /// Input image file or directory, or @clipboard to read from the OS clipboard
     pub input: PathBuf,
     /// Output file or directory. Defaults to `<input>.transparent.png`
     /// (file) or `<input>.transparent/` (directory).
@@ -52,6 +56,29 @@ pub fn run(args: TransparentArgs) -> Result<()> {
         })?),
         None => None,
     };
+
+    let source = ImageSource::parse(&args.input);
+    guard_clipboard_not_directory(&source, args.recursive)?;
+
+    if source.is_clipboard() {
+        let out_path = args
+            .output
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("--output is required when input is @clipboard"))?;
+        let out_path = force_png(out_path);
+        let img = source.load_image()?;
+        let report = process_dynamic(
+            &img,
+            &out_path,
+            bg_override,
+            args.tolerance,
+            args.despill,
+            args.despill_band,
+            args.shrink,
+        )?;
+        print_clipboard_report(&out_path, &report);
+        return Ok(());
+    }
 
     let inputs = collect_inputs(&args.input, args.recursive)?;
     if inputs.is_empty() {
@@ -165,6 +192,74 @@ fn process_one(
         in_size,
         out_size,
     })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn process_dynamic(
+    img: &DynamicImage,
+    output: &Path,
+    bg: Option<[u8; 3]>,
+    tolerance: f64,
+    despill: bool,
+    despill_band: u32,
+    shrink: u32,
+) -> Result<Report> {
+    let opts = TransparentOptions {
+        background: bg,
+        tolerance,
+        despill,
+        despill_band,
+        shrink,
+    };
+    let (rgba, result) = transparent::apply_transparency(img, &opts)
+        .context("Failed to key out background from @clipboard")?;
+
+    ensure_parent(output)?;
+    rgba.save(output)
+        .with_context(|| format!("Failed to save: {}", output.display()))?;
+
+    let out_size = std::fs::metadata(output).map(|m| m.len()).unwrap_or(0);
+    Ok(Report {
+        background: result.background,
+        transparent_pixels: result.transparent_pixels,
+        opaque_pixels: result.opaque_pixels,
+        in_size: 0,
+        out_size,
+    })
+}
+
+fn print_clipboard_report(output: &Path, r: &Report) {
+    let bg_hex = format!(
+        "#{:02x}{:02x}{:02x}",
+        r.background[0], r.background[1], r.background[2]
+    );
+    let total = r.transparent_pixels + r.opaque_pixels;
+    let pct = |n: u64| {
+        if total == 0 {
+            0.0
+        } else {
+            n as f64 / total as f64 * 100.0
+        }
+    };
+
+    println!("{} background   {}", ok_mark(), cyan(&bg_hex));
+    println!(
+        "{} transparent  {} {}",
+        ok_mark(),
+        red(&format!("{:.1}%", pct(r.transparent_pixels))),
+        dim(&format!("({} px)", r.transparent_pixels)),
+    );
+    println!(
+        "{} opaque       {} {}",
+        ok_mark(),
+        red(&format!("{:.1}%", pct(r.opaque_pixels))),
+        dim(&format!("({} px)", r.opaque_pixels)),
+    );
+    println!(
+        "\nsaved to {} {}",
+        green(&output.display().to_string()),
+        dim(&format!("(@clipboard → {})", format_size(r.out_size))),
+    );
 }
 
 fn print_report(input: &Path, output: &Path, r: &Report, batch: bool) {

@@ -1,14 +1,16 @@
 use anyhow::Result;
 use clap::Args;
-use pixa::convert::convert_image;
+use pixa::convert::{convert_image, convert_image_from_dynamic};
 use std::path::PathBuf;
 
 use super::style::{arrow, bold, dim, fail_mark, green, ok_mark, red, yellow};
-use super::{collect_inputs, ensure_parent, mirror_path};
+use super::{
+    ImageSource, collect_inputs, ensure_parent, guard_clipboard_not_directory, mirror_path,
+};
 
 #[derive(Args)]
 pub struct ConvertArgs {
-    /// Input image file or directory
+    /// Input image file or directory, or @clipboard to read from the OS clipboard
     pub input: PathBuf,
     /// Output file (single input) or directory (recursive)
     pub output: PathBuf,
@@ -21,6 +23,23 @@ pub struct ConvertArgs {
 }
 
 pub fn run(args: ConvertArgs) -> Result<()> {
+    let source = ImageSource::parse(&args.input);
+    guard_clipboard_not_directory(&source, args.recursive)?;
+
+    if source.is_clipboard() {
+        ensure_parent(&args.output)?;
+        let img = source.load_image()?;
+        convert_image_from_dynamic(&img, &args.output)?;
+        println!(
+            "{} {} {} {}",
+            ok_mark(),
+            green("@clipboard"),
+            arrow(),
+            args.output.display(),
+        );
+        return Ok(());
+    }
+
     let inputs = collect_inputs(&args.input, args.recursive)?;
     if inputs.is_empty() {
         println!("{} No images found.", yellow("!"));

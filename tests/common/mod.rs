@@ -81,3 +81,62 @@ pub fn tmp_png(w: u32, h: u32) -> (TempDir, std::path::PathBuf) {
     write_image(&gradient_rgb(w, h), &path);
     (dir, path)
 }
+
+/// Guard that serializes clipboard access across parallel tests.
+///
+/// The OS clipboard is a single process-wide resource. Without
+/// serialization, parallel tests race — one test sets a 96×72 image,
+/// another test overwrites it with 256×256 before the first asserts
+/// dimensions. Every clipboard-touching test must hold this lock for
+/// its entire lifetime: call `let _lock = common::clipboard_lock();`
+/// as the first line of the test.
+#[cfg(target_os = "macos")]
+pub fn clipboard_lock() -> std::sync::MutexGuard<'static, ()> {
+    use std::sync::Mutex;
+    static LOCK: Mutex<()> = Mutex::new(());
+    // If a previous test panicked while holding the lock the mutex is
+    // poisoned — recover the guard anyway; we don't care about state.
+    LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Place an RGBA image on the macOS clipboard. Used by the clipboard
+/// integration tests. NOTE: this clobbers whatever the developer has on
+/// their clipboard — expected in CI/isolated contexts, unfriendly on a
+/// dev workstation.
+#[cfg(target_os = "macos")]
+pub fn set_clipboard_image(img: &DynamicImage) {
+    use arboard::{Clipboard, ImageData};
+    let rgba = img.to_rgba8();
+    let (w, h) = (rgba.width() as usize, rgba.height() as usize);
+    let data = ImageData {
+        width: w,
+        height: h,
+        bytes: rgba.into_raw().into(),
+    };
+    Clipboard::new()
+        .expect("open clipboard")
+        .set_image(data)
+        .expect("set clipboard image");
+}
+
+/// Place raw PNG bytes onto the macOS pasteboard under `public.png`.
+/// Used to test the byte-passthrough path. The PNG bytes are written
+/// verbatim — no decode/re-encode — so `read_native_png()` should
+/// return exactly these bytes.
+#[cfg(target_os = "macos")]
+pub fn set_clipboard_png_bytes(png: &[u8]) {
+    use objc2_app_kit::NSPasteboard;
+    use objc2_foundation::{NSArray, NSData, NSString};
+
+    unsafe {
+        let pb = NSPasteboard::generalPasteboard();
+        // Clearing the pasteboard also drops any stale content like
+        // TIFF from a previous test's set_clipboard_image call.
+        let empty: objc2::rc::Retained<NSArray<NSString>> = NSArray::new();
+        pb.declareTypes_owner(&empty, None);
+
+        let png_type = NSString::from_str("public.png");
+        let data = NSData::with_bytes(png);
+        let _ = pb.setData_forType(Some(&data), &png_type);
+    }
+}

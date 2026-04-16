@@ -4,7 +4,7 @@ use anyhow::Result;
 use clap::{CommandFactory, Parser, Subcommand};
 
 use commands::{
-    completions, compress, convert, detect, favicon, info, install, remove_watermark, split,
+    completions, compress, convert, detect, favicon, info, install, paste, remove_watermark, split,
     transparent,
 };
 
@@ -16,6 +16,8 @@ Examples:
   pixa favicon logo.png -o ./favicon
   pixa convert photo.png photo.webp
   pixa info photo.jpg
+  pixa paste screenshot.png
+  pixa compress @clipboard -o out.webp
   pixa remove-watermark image.jpg -o clean.jpg
   pixa install --skills
   pixa completions zsh > ~/.zfunc/_pixa
@@ -64,6 +66,9 @@ enum Commands {
     /// Replace a solid background color with transparency (chroma-key)
     Transparent(transparent::TransparentArgs),
 
+    /// Save the clipboard image to a file (or stdout with `-`)
+    Paste(paste::PasteArgs),
+
     /// Install integrations (Claude Code skill, etc.)
     Install(install::InstallArgs),
 
@@ -94,6 +99,7 @@ fn main() -> Result<()> {
         Commands::Favicon(a) => favicon::run(a),
         Commands::Split(a) => split::run(a),
         Commands::Transparent(a) => transparent::run(a),
+        Commands::Paste(a) => paste::run(a),
         Commands::Install(a) => install::run(a),
         Commands::Completions(a) => {
             let mut cmd = Cli::command();

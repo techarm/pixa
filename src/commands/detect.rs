@@ -3,11 +3,12 @@ use clap::Args;
 use pixa::watermark::WatermarkEngine;
 use std::path::PathBuf;
 
+use super::ImageSource;
 use super::style::{dim, fail_mark, green, ok_mark, red};
 
 #[derive(Args)]
 pub struct DetectArgs {
-    /// Input image file
+    /// Input image file, or @clipboard to read from the OS clipboard
     pub input: PathBuf,
     /// Output as JSON
     #[arg(long)]
@@ -15,8 +16,9 @@ pub struct DetectArgs {
 }
 
 pub fn run(args: DetectArgs) -> Result<()> {
+    let source = ImageSource::parse(&args.input);
     let engine = WatermarkEngine::new()?;
-    let img = image::open(&args.input)?;
+    let img = source.load_image()?;
     let result = engine.detect_watermark(&img, None);
 
     if args.json {
@@ -34,7 +36,7 @@ pub fn run(args: DetectArgs) -> Result<()> {
     println!(
         "{} {} {} {} {}",
         mark,
-        green(&args.input.display().to_string()),
+        green(&source.display_label()),
         dim("·"),
         status,
         dim(&format!("({pct:.1}%)"))

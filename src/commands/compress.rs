@@ -1,14 +1,17 @@
 use anyhow::Result;
 use clap::Args;
-use pixa::compress::compress_image;
+use pixa::compress::{compress_image, compress_image_dynamic};
 use std::path::{Path, PathBuf};
 
 use super::style::{arrow, bold, dim, fail_mark, green, ok_mark, red, skip_mark, yellow};
-use super::{collect_inputs, ensure_parent, format_size, mirror_path};
+use super::{
+    ImageSource, collect_inputs, ensure_parent, format_size, guard_clipboard_not_directory,
+    mirror_path,
+};
 
 #[derive(Args)]
 pub struct CompressArgs {
-    /// Input image file or directory
+    /// Input image file or directory, or @clipboard to read from the OS clipboard
     pub input: PathBuf,
     /// Output file or directory. If omitted, writes alongside the
     /// input with a `.min` suffix (file) or to a sibling
@@ -26,6 +29,28 @@ pub struct CompressArgs {
 }
 
 pub fn run(args: CompressArgs) -> Result<()> {
+    let source = ImageSource::parse(&args.input);
+    guard_clipboard_not_directory(&source, args.recursive)?;
+
+    if source.is_clipboard() {
+        let out_path = args
+            .output
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("--output is required when input is @clipboard"))?;
+        ensure_parent(&out_path)?;
+        let img = source.load_image()?;
+        match compress_image_dynamic(&img, &out_path, args.max) {
+            Ok(r) => {
+                print_clipboard_line(&out_path, &r);
+                return Ok(());
+            }
+            Err(e) => {
+                eprintln!("{} @clipboard: {}", fail_mark(), red(&e.to_string()));
+                return Err(anyhow::anyhow!(e));
+            }
+        }
+    }
+
     let inputs = collect_inputs(&args.input, args.recursive)?;
     if inputs.is_empty() {
         println!("{} No images found.", yellow("!"));
@@ -113,6 +138,17 @@ fn process_one(input: &Path, output: &Path, max_edge: Option<u32>) -> Result<()>
             Err(anyhow::anyhow!(e))
         }
     }
+}
+
+fn print_clipboard_line(output: &Path, r: &pixa::compress::CompressResult) {
+    println!(
+        "{} {} {} {}  {}",
+        ok_mark(),
+        green("@clipboard"),
+        arrow(),
+        output.display(),
+        red(&format_size(r.compressed_size)),
+    );
 }
 
 fn print_line(input: &Path, output: &Path, r: &pixa::compress::CompressResult) {

@@ -21,7 +21,7 @@ pub enum ConvertError {
     WebpEncode,
 }
 
-/// Convert an image from one format to another
+/// Convert an image on disk from one format to another.
 pub fn convert_image(input: &Path, output: &Path) -> Result<(), ConvertError> {
     let in_ext = input.extension().and_then(|e| e.to_str()).unwrap_or("");
     let out_ext = output.extension().and_then(|e| e.to_str()).unwrap_or("");
@@ -38,10 +38,33 @@ pub fn convert_image(input: &Path, output: &Path) -> Result<(), ConvertError> {
     );
 
     let img = image::open(input)?;
+    write_image_to(&img, output, out_format)
+}
 
+/// Convert an in-memory image to the format inferred from `output`'s
+/// extension. Used by `@clipboard` input where there is no source path.
+pub fn convert_image_from_dynamic(img: &DynamicImage, output: &Path) -> Result<(), ConvertError> {
+    let out_ext = output.extension().and_then(|e| e.to_str()).unwrap_or("");
+    let out_format = ImageFormat::from_extension(out_ext)
+        .ok_or_else(|| ConvertError::UnsupportedOutput(out_ext.to_string()))?;
+
+    info!(
+        "Converting: @clipboard -> {} ({})",
+        output.display(),
+        out_format.extension()
+    );
+
+    write_image_to(img, output, out_format)
+}
+
+fn write_image_to(
+    img: &DynamicImage,
+    output: &Path,
+    out_format: ImageFormat,
+) -> Result<(), ConvertError> {
     match out_format {
         ImageFormat::WebP => {
-            save_as_webp(&img, output, 90.0)?;
+            save_as_webp(img, output, 90.0)?;
         }
         ImageFormat::Jpeg => {
             // Convert RGBA to RGB for JPEG (no alpha support)
@@ -52,7 +75,6 @@ pub fn convert_image(input: &Path, output: &Path) -> Result<(), ConvertError> {
             img.save(output)?;
         }
     }
-
     Ok(())
 }
 
@@ -182,5 +204,34 @@ mod tests {
         let output = dir.path().join("out.webp");
 
         assert!(convert_image(&input, &output).is_err());
+    }
+
+    #[test]
+    fn convert_from_dynamic_writes_webp() {
+        let dir = TempDir::new().unwrap();
+        let output = dir.path().join("out.webp");
+        let img = DynamicImage::ImageRgba8({
+            let mut i = RgbaImage::new(32, 32);
+            for y in 0..32 {
+                for x in 0..32 {
+                    i.put_pixel(x, y, Rgba([(x * 8) as u8, (y * 8) as u8, 128, 255]));
+                }
+            }
+            i
+        });
+
+        convert_image_from_dynamic(&img, &output).unwrap();
+        let bytes = std::fs::read(&output).unwrap();
+        assert_eq!(&bytes[..4], b"RIFF");
+        assert_eq!(&bytes[8..12], b"WEBP");
+    }
+
+    #[test]
+    fn convert_from_dynamic_rejects_unsupported_extension() {
+        let dir = TempDir::new().unwrap();
+        let output = dir.path().join("out.xyz");
+        let img = DynamicImage::ImageRgb8(RgbImage::new(8, 8));
+        let err = convert_image_from_dynamic(&img, &output).unwrap_err();
+        assert!(matches!(err, ConvertError::UnsupportedOutput(_)));
     }
 }

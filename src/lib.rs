@@ -1,3 +1,4 @@
+pub mod clipboard;
 pub mod compress;
 pub mod convert;
 pub mod favicon;
@@ -6,9 +7,12 @@ pub mod split;
 pub mod transparent;
 pub mod watermark;
 
+pub use clipboard::ClipboardError;
 pub use compress::{CompressResult, compress_image};
 pub use convert::convert_image;
-pub use favicon::{FaviconOptions, FaviconResult, generate_favicon_set};
+pub use favicon::{
+    FaviconOptions, FaviconResult, generate_favicon_set, generate_favicon_set_from_image,
+};
 pub use info::{ImageInfo, get_image_info};
 pub use watermark::{DetectionResult, WatermarkEngine, WatermarkSize};
 

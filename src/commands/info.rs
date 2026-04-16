@@ -1,13 +1,16 @@
 use anyhow::Result;
 use clap::Args;
-use pixa::info::get_image_info;
+use image::DynamicImage;
+use pixa::info::{get_image_info, get_image_info_from_image};
+use std::io::Cursor;
 use std::path::PathBuf;
 
+use super::ImageSource;
 use super::style::{bold, cyan, dim, green, red};
 
 #[derive(Args)]
 pub struct InfoArgs {
-    /// Input image file
+    /// Input image file, or @clipboard to read from the OS clipboard
     pub input: PathBuf,
     /// Output as JSON
     #[arg(long)]
@@ -15,7 +18,16 @@ pub struct InfoArgs {
 }
 
 pub fn run(args: InfoArgs) -> Result<()> {
-    let info = get_image_info(&args.input)?;
+    let source = ImageSource::parse(&args.input);
+    let info = if source.is_clipboard() {
+        let img = source.load_image()?;
+        // Re-encode to PNG so file_size and SHA-256 are deterministic and
+        // meaningful for clipboard input (no source file on disk).
+        let png_bytes = encode_to_png(&img)?;
+        get_image_info_from_image(&img, "@clipboard", Some(&png_bytes))
+    } else {
+        get_image_info(&args.input)?
+    };
     if args.json {
         println!("{}", serde_json::to_string_pretty(&info)?);
         return Ok(());
@@ -58,4 +70,10 @@ pub fn run(args: InfoArgs) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn encode_to_png(img: &DynamicImage) -> Result<Vec<u8>> {
+    let mut buf = Vec::new();
+    img.write_to(&mut Cursor::new(&mut buf), image::ImageFormat::Png)?;
+    Ok(buf)
 }
