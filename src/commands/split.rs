@@ -5,12 +5,13 @@ use pixa::split::{self, PreviewStyle, SplitOptions};
 use pixa::transparent;
 use std::path::PathBuf;
 
-use super::style::{arrow, cyan, dim, fail_mark, green, ok_mark, red};
-use super::{ensure_parent, format_size};
+use super::style::{arrow, cyan, dim, green, ok_mark, red};
+use super::{ImageSource, bail_with_hints, ensure_parent, format_size};
 
 #[derive(Args)]
 pub struct SplitArgs {
-    /// Input sheet image (objects on a single-color background)
+    /// Input sheet image (objects on a single-color background). Use
+    /// @clipboard (aliases: @clip, @c) to read from the OS clipboard.
     pub input: PathBuf,
     /// Output directory for the cropped objects
     #[arg(short, long)]
@@ -70,8 +71,8 @@ impl From<PreviewStyleArg> for PreviewStyle {
 }
 
 pub fn run(args: SplitArgs) -> Result<()> {
-    let img = image::open(&args.input)
-        .with_context(|| format!("Failed to open: {}", args.input.display()))?;
+    let source = ImageSource::parse(&args.input);
+    let img = source.load_image()?;
 
     let opts = SplitOptions {
         padding: args.padding,
@@ -85,18 +86,18 @@ pub fn run(args: SplitArgs) -> Result<()> {
     let result = match split::detect_objects(&img, &opts) {
         Ok(r) => r,
         Err(e) => {
-            // Auto-write preview on failure to help diagnosis.
-            let preview_path = preview_path(&args.input);
-            // Run a no-expectation pass purely for visualization.
+            // Auto-write a preview on failure to help diagnosis. Hints
+            // are surfaced via the unified error channel so main() can
+            // render them next to `error:` in the git-style format.
+            let preview_out = preview_path(&source);
+            let mut hints: Vec<String> = Vec::new();
             if let Ok(diag) = split::detect_objects(&img, &SplitOptions::default()) {
-                let _ = split::write_preview(&img, &diag, PreviewStyle::Detected, &preview_path);
-                eprintln!("{} {}", fail_mark(), e);
-                eprintln!("  preview written: {}", preview_path.display());
-                eprintln!("  hint: try --padding or pass --names to enable re-split");
-            } else {
-                eprintln!("{} {}", fail_mark(), e);
+                if split::write_preview(&img, &diag, PreviewStyle::Detected, &preview_out).is_ok() {
+                    hints.push(format!("preview written: {}", preview_out.display()));
+                }
+                hints.push("try --padding or pass --names to enable re-split".to_string());
             }
-            std::process::exit(1);
+            return Err(bail_with_hints(e.to_string(), hints));
         }
     };
 
@@ -205,7 +206,7 @@ pub fn run(args: SplitArgs) -> Result<()> {
     }
 
     if args.preview {
-        let preview = preview_path(&args.input);
+        let preview = preview_path(&source);
         split::write_preview(&img, &result, args.preview_style.into(), &preview)
             .with_context(|| format!("Failed to write preview: {}", preview.display()))?;
         println!("\npreview {} {}", arrow(), preview.display());
@@ -214,13 +215,18 @@ pub fn run(args: SplitArgs) -> Result<()> {
     Ok(())
 }
 
-fn preview_path(input: &std::path::Path) -> PathBuf {
-    let parent = input.parent().unwrap_or(std::path::Path::new("."));
-    let stem = input
-        .file_stem()
-        .map(|s| s.to_string_lossy().to_string())
-        .unwrap_or_else(|| "image".to_string());
-    parent.join(format!("{stem}-preview.png"))
+fn preview_path(source: &ImageSource) -> PathBuf {
+    match source {
+        ImageSource::Clipboard => PathBuf::from("./clipboard-preview.png"),
+        ImageSource::Path(input) => {
+            let parent = input.parent().unwrap_or(std::path::Path::new("."));
+            let stem = input
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| "image".to_string());
+            parent.join(format!("{stem}-preview.png"))
+        }
+    }
 }
 
 /// Crop `obj` from `img` onto a fully transparent `target_w × target_h`

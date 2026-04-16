@@ -3,7 +3,7 @@ use clap::{Args, CommandFactory};
 use clap_complete::Shell;
 use std::path::PathBuf;
 
-use super::style::{dim, fail_mark, green, ok_mark, yellow};
+use super::style::{dim, err, green, ok_mark};
 
 /// Embedded SKILL.md content. Bundled into the binary at compile time
 /// so `pixa install --skills` works without any external files.
@@ -41,8 +41,8 @@ fn install_skills(force: bool) -> Result<()> {
     if target.exists() && !force {
         eprintln!(
             "{} skill already installed at {}",
-            yellow("!"),
-            green(&target.display().to_string())
+            err::yellow("!"),
+            err::green(&target.display().to_string())
         );
         eprintln!("  re-run with --force to overwrite");
         return Ok(());
@@ -73,8 +73,8 @@ fn install_completions(force: bool) -> Result<()> {
     if target.exists() && !force {
         eprintln!(
             "{} completions already installed at {}",
-            yellow("!"),
-            green(&target.display().to_string())
+            err::yellow("!"),
+            err::green(&target.display().to_string())
         );
         eprintln!("  re-run with --force to overwrite");
         return Ok(());
@@ -177,7 +177,7 @@ fn home_dir() -> Result<PathBuf> {
     }
     eprintln!(
         "{} could not determine home directory (HOME / USERPROFILE not set)",
-        fail_mark()
+        err::fail_mark()
     );
     anyhow::bail!("home directory not found")
 }

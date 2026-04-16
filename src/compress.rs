@@ -26,11 +26,11 @@ const WEBP_QUALITY: u8 = 80;
 pub enum CompressError {
     #[error("Unsupported format: {0}")]
     UnsupportedFormat(String),
-    #[error("Image error: {0}")]
+    #[error(transparent)]
     Image(#[from] image::ImageError),
-    #[error("IO error: {0}")]
+    #[error(transparent)]
     Io(#[from] std::io::Error),
-    #[error("PNG optimization error: {0}")]
+    #[error("PNG optimization: {0}")]
     PngOptimize(String),
 }
 
@@ -56,26 +56,8 @@ pub fn compress_image(
     max_edge: Option<u32>,
 ) -> Result<CompressResult, CompressError> {
     let original_size = std::fs::metadata(input)?.len();
-    let mut img = image::open(input)?;
-
-    if let Some(limit) = max_edge
-        && let Some(resized) = resize_to_max_edge(&img, limit)
-    {
-        img = resized;
-    }
-
-    let ext = output
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_lowercase();
-
-    let compressed = match ext.as_str() {
-        "jpg" | "jpeg" => encode_jpeg(&img, JPEG_QUALITY)?,
-        "png" => encode_png(&img, PNG_LEVEL)?,
-        "webp" => encode_webp(&img, WEBP_QUALITY)?,
-        other => return Err(CompressError::UnsupportedFormat(other.to_string())),
-    };
+    let img = image::open(input)?;
+    let compressed = encode_for_output(&img, output, max_edge)?;
 
     // Decide whether to keep the compressed result or fall back to the
     // original (if the optimizer made it bigger).
@@ -100,6 +82,54 @@ pub fn compress_image(
         savings_percent: savings,
         kept_original,
     })
+}
+
+/// Compress an in-memory image. Used by `@clipboard` input, where there's
+/// no source file on disk. Unlike [`compress_image`], this always writes
+/// the compressed bytes (no kept-original fallback — clipboard input has
+/// no "original file" to fall back to). `original_size` in the result
+/// reflects the encoded output size, so `savings_percent` is always 0.
+pub fn compress_image_dynamic(
+    img: &DynamicImage,
+    output: &Path,
+    max_edge: Option<u32>,
+) -> Result<CompressResult, CompressError> {
+    let compressed = encode_for_output(img, output, max_edge)?;
+    std::fs::write(output, &compressed)?;
+    let compressed_size = compressed.len() as u64;
+
+    Ok(CompressResult {
+        original_size: compressed_size,
+        compressed_size,
+        savings_percent: 0.0,
+        kept_original: false,
+    })
+}
+
+fn encode_for_output(
+    img: &DynamicImage,
+    output: &Path,
+    max_edge: Option<u32>,
+) -> Result<Vec<u8>, CompressError> {
+    // Borrow the resized image if resize_to_max_edge produced one,
+    // otherwise use the caller's &DynamicImage in place. Avoids a
+    // full deep copy of the pixel buffer on the common no-resize
+    // path — significant for 4K+ inputs.
+    let resized = max_edge.and_then(|limit| resize_to_max_edge(img, limit));
+    let img_ref: &DynamicImage = resized.as_ref().unwrap_or(img);
+
+    let ext = output
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    match ext.as_str() {
+        "jpg" | "jpeg" => encode_jpeg(img_ref, JPEG_QUALITY),
+        "png" => encode_png(img_ref, PNG_LEVEL),
+        "webp" => encode_webp(img_ref, WEBP_QUALITY),
+        other => Err(CompressError::UnsupportedFormat(other.to_string())),
+    }
 }
 
 /// Resize so the longest edge is exactly `max_edge`, preserving
@@ -359,6 +389,32 @@ mod tests {
         compress_image(&input, &output, Some(800)).unwrap();
 
         // The WebP output decoded should be <= 800 on the long edge.
+        let decoded = image::open(&output).unwrap();
+        let (w, h) = decoded.dimensions();
+        assert!(w <= 800 && h <= 800, "got {w}x{h}");
+        assert!(w == 800 || h == 800, "one edge should equal the limit");
+    }
+
+    #[test]
+    fn compress_dynamic_writes_webp_bytes() {
+        let dir = TempDir::new().unwrap();
+        let output = dir.path().join("out.webp");
+        let img = test_image(128, 128);
+
+        let result = compress_image_dynamic(&img, &output, None).unwrap();
+        assert!(!result.kept_original);
+        let bytes = std::fs::read(&output).unwrap();
+        assert_eq!(&bytes[..4], b"RIFF");
+        assert_eq!(&bytes[8..12], b"WEBP");
+    }
+
+    #[test]
+    fn compress_dynamic_respects_max_edge() {
+        let dir = TempDir::new().unwrap();
+        let output = dir.path().join("small.png");
+        let img = test_image(2000, 1000);
+
+        compress_image_dynamic(&img, &output, Some(800)).unwrap();
         let decoded = image::open(&output).unwrap();
         let (w, h) = decoded.dimensions();
         assert!(w <= 800 && h <= 800, "got {w}x{h}");

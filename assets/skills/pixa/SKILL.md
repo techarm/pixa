@@ -1,6 +1,6 @@
 ---
 name: pixa
-description: Use the `pixa` CLI for image processing tasks. Trigger when the user asks to compress, resize, optimize, or convert an image (especially AI-generated 4K PNGs that need to be web-ready); split a sprite or expression sheet into individual avatars; generate a favicon set from a logo; remove a Gemini AI watermark; key out a solid background color to make an image transparent; or inspect image metadata. Also trigger for Japanese requests like 画像圧縮, リサイズ, WebP変換, アイコン生成, アバター切り出し, 透かし除去, 背景透過, 透明化.
+description: Use the `pixa` CLI for image processing tasks. Trigger when the user asks to compress, resize, optimize, or convert an image (especially AI-generated 4K PNGs that need to be web-ready); split a sprite or expression sheet into individual avatars; generate a favicon set from a logo; remove a Gemini AI watermark; key out a solid background color to make an image transparent; inspect image metadata; or save/process an image that the user has copied to their clipboard (screenshot, Finder copy, browser copy). Also trigger for Japanese requests like 画像圧縮, リサイズ, WebP変換, アイコン生成, アバター切り出し, 透かし除去, 背景透過, 透明化, クリップボード, スクショ, 貼り付け.
 ---
 
 # pixa — image processing CLI
@@ -32,6 +32,8 @@ in the pixa repo, then put `target/release/pixa` on `$PATH`.
 | "Remove the Gemini watermark" / 「透かし除去」 | `remove-watermark` |
 | "Show image dimensions / EXIF / size" | `info` |
 | "Detect if this image has a Gemini watermark" | `detect` |
+| "Save the image I just copied" / 「クリップボードの画像を保存」 | `paste <output>` |
+| "Process the image on my clipboard" / 「コピーした画像を圧縮」 | any command + `@clipboard` (or `@clip` / `@c`) |
 
 ## Workflows
 
@@ -223,6 +225,50 @@ pixa convert ./photos ./out -r --format webp
 
 For most cases though, prefer `compress -o photo.webp` since that also
 optimizes the output.
+
+### Work with clipboard images (screenshots, Finder copy, browser copy)
+
+Every processing command accepts `@clipboard` in place of a path.
+Short aliases `@clip` and `@c` are equivalent — when writing examples
+or invoking pixa on behalf of the user, pick the shortest form that
+still reads clearly (`@c` is often fine in a one-off command).
+
+```bash
+# User just took a screenshot or Cmd+C'd an image — they probably
+# want one of these:
+pixa paste screenshot.png                     # save as-is
+pixa compress @clipboard -o optimized.webp    # save + optimize
+pixa info @clip                               # inspect it
+pixa favicon @c -o ./favicons                 # make a favicon set
+pixa transparent @clipboard -o logo.png --bg '#FF00FF'
+```
+
+**When to prefer `pixa paste` vs `pixa compress @clipboard`:**
+
+- `pixa paste <name.ext>` — the user wants the clipboard image saved,
+  unchanged. On macOS, when the source is a file (Finder Cmd+C) or
+  raw PNG (browser Cmd+C), paste copies source bytes verbatim so
+  EXIF and the original encoder's settings are preserved.
+- `pixa compress @clipboard -o <name.ext>` — the user wants the
+  clipboard image optimized for web. Re-encodes at pixa's standard
+  quality defaults.
+- Any other processing command + `@clipboard` — same as operating on
+  a file, just sourced from the clipboard.
+
+**Errors the user might hit:**
+
+- `error: --output is required when input is @clipboard` — commands
+  that normally default to writing next to the input need an explicit
+  `-o <path>` when reading from the clipboard (no source file means
+  no sibling location). Always pass `-o` for clipboard inputs.
+- `error: --recursive cannot be combined with @clipboard input` — the
+  clipboard carries one image; there's nothing to recurse into.
+- `error: Clipboard is empty or does not contain an image` — ask the
+  user to copy an image (Cmd+C) and retry.
+
+**Platform note:** macOS has full clipboard support. Windows and Linux
+can read clipboard image data (decoded RGBA) but don't yet support the
+byte-verbatim path that preserves source metadata.
 
 ## Important conventions
 

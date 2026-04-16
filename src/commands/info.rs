@@ -1,13 +1,17 @@
 use anyhow::Result;
 use clap::Args;
-use pixa::info::get_image_info;
+use image::DynamicImage;
+use pixa::info::{get_image_info, get_image_info_from_image};
+use std::io::Cursor;
 use std::path::PathBuf;
 
+use super::ImageSource;
 use super::style::{bold, cyan, dim, green, red};
 
 #[derive(Args)]
 pub struct InfoArgs {
-    /// Input image file
+    /// Input image file. Use @clipboard (aliases: @clip, @c) to read the
+    /// image from the OS clipboard.
     pub input: PathBuf,
     /// Output as JSON
     #[arg(long)]
@@ -15,7 +19,23 @@ pub struct InfoArgs {
 }
 
 pub fn run(args: InfoArgs) -> Result<()> {
-    let info = get_image_info(&args.input)?;
+    let source = ImageSource::parse(&args.input);
+    let info = if source.is_clipboard() {
+        // If Finder put a file URL on the clipboard, report real file
+        // metadata (size, SHA of source bytes, EXIF) — same detail as
+        // `pixa info <path>`.
+        if let Some(path) = pixa::clipboard::read_file_url()? {
+            get_image_info(&path)?
+        } else {
+            let img = source.load_image()?;
+            // Otherwise re-encode the decoded RGBA to PNG so file_size
+            // and SHA-256 are deterministic for raw-pixel clipboard input.
+            let png_bytes = encode_to_png(&img)?;
+            get_image_info_from_image(&img, "@clipboard", Some(&png_bytes))
+        }
+    } else {
+        get_image_info(&args.input)?
+    };
     if args.json {
         println!("{}", serde_json::to_string_pretty(&info)?);
         return Ok(());
@@ -58,4 +78,10 @@ pub fn run(args: InfoArgs) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn encode_to_png(img: &DynamicImage) -> Result<Vec<u8>> {
+    let mut buf = Vec::new();
+    img.write_to(&mut Cursor::new(&mut buf), image::ImageFormat::Png)?;
+    Ok(buf)
 }

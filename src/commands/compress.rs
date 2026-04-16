@@ -1,14 +1,18 @@
 use anyhow::Result;
 use clap::Args;
-use pixa::compress::compress_image;
+use pixa::compress::{compress_image, compress_image_dynamic};
 use std::path::{Path, PathBuf};
 
-use super::style::{arrow, bold, dim, fail_mark, green, ok_mark, red, skip_mark, yellow};
-use super::{collect_inputs, ensure_parent, format_size, mirror_path};
+use super::style::{arrow, bold, dim, err, green, ok_mark, red, skip_mark, yellow};
+use super::{
+    ImageSource, collect_inputs, ensure_parent, format_size, guard_clipboard_not_directory,
+    mirror_path,
+};
 
 #[derive(Args)]
 pub struct CompressArgs {
-    /// Input image file or directory
+    /// Input image file or directory. Use @clipboard (aliases: @clip, @c)
+    /// to read the image from the OS clipboard.
     pub input: PathBuf,
     /// Output file or directory. If omitted, writes alongside the
     /// input with a `.min` suffix (file) or to a sibling
@@ -26,6 +30,21 @@ pub struct CompressArgs {
 }
 
 pub fn run(args: CompressArgs) -> Result<()> {
+    let source = ImageSource::parse(&args.input);
+    guard_clipboard_not_directory(&source, args.recursive)?;
+
+    if source.is_clipboard() {
+        let out_path = args
+            .output
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("--output is required when input is @clipboard"))?;
+        ensure_parent(&out_path)?;
+        let img = source.load_image()?;
+        let result = compress_image_dynamic(&img, &out_path, args.max)?;
+        print_clipboard_line(&out_path, &result);
+        return Ok(());
+    }
+
     let inputs = collect_inputs(&args.input, args.recursive)?;
     if inputs.is_empty() {
         println!("{} No images found.", yellow("!"));
@@ -59,7 +78,12 @@ pub fn run(args: CompressArgs) -> Result<()> {
     for input in &inputs {
         let out_path = mirror_path(input, input_root, Some(&output_root));
         if let Err(e) = ensure_parent(&out_path) {
-            eprintln!("{} {}: {e}", fail_mark(), input.display());
+            eprintln!(
+                "{} {}: {}",
+                err::fail_mark(),
+                input.display(),
+                err::red(&e.to_string())
+            );
             failed += 1;
             continue;
         }
@@ -74,9 +98,9 @@ pub fn run(args: CompressArgs) -> Result<()> {
                 failed += 1;
                 eprintln!(
                     "{} {}: {}",
-                    fail_mark(),
+                    err::fail_mark(),
                     input.display(),
-                    red(&e.to_string())
+                    err::red(&e.to_string())
                 );
             }
         }
@@ -98,21 +122,20 @@ pub fn run(args: CompressArgs) -> Result<()> {
 }
 
 fn process_one(input: &Path, output: &Path, max_edge: Option<u32>) -> Result<()> {
-    match compress_image(input, output, max_edge) {
-        Ok(r) => {
-            print_line(input, output, &r);
-            Ok(())
-        }
-        Err(e) => {
-            eprintln!(
-                "{} {}: {}",
-                fail_mark(),
-                input.display(),
-                red(&e.to_string())
-            );
-            Err(anyhow::anyhow!(e))
-        }
-    }
+    let r = compress_image(input, output, max_edge)?;
+    print_line(input, output, &r);
+    Ok(())
+}
+
+fn print_clipboard_line(output: &Path, r: &pixa::compress::CompressResult) {
+    println!(
+        "{} {} {} {}  {}",
+        ok_mark(),
+        green("@clipboard"),
+        arrow(),
+        output.display(),
+        red(&format_size(r.compressed_size)),
+    );
 }
 
 fn print_line(input: &Path, output: &Path, r: &pixa::compress::CompressResult) {

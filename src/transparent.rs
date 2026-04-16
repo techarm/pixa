@@ -42,9 +42,9 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum TransparentError {
-    #[error("Image error: {0}")]
+    #[error(transparent)]
     Image(#[from] image::ImageError),
-    #[error("IO error: {0}")]
+    #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error("Empty image")]
     Empty,

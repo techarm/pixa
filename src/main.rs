@@ -4,7 +4,9 @@ use anyhow::Result;
 use clap::{CommandFactory, Parser, Subcommand};
 
 use commands::{
-    completions, compress, convert, detect, favicon, info, install, remove_watermark, split,
+    completions, compress, convert, detect, error, favicon, info, install, paste, remove_watermark,
+    split,
+    style::{error_prefix, hint_prefix},
     transparent,
 };
 
@@ -19,6 +21,12 @@ Examples:
   pixa remove-watermark image.jpg -o clean.jpg
   pixa install --skills
   pixa completions zsh > ~/.zfunc/_pixa
+
+Reading from the clipboard (macOS full support; Win/Linux: arboard only):
+  pixa paste screenshot.png                    # save clipboard image
+  pixa compress @clipboard -o out.webp         # compress it
+  pixa info @clip                              # @clip is a shorter alias
+  pixa convert @c out.png                      # @c is the shortest alias
 ";
 
 #[derive(Parser)]
@@ -64,6 +72,9 @@ enum Commands {
     /// Replace a solid background color with transparency (chroma-key)
     Transparent(transparent::TransparentArgs),
 
+    /// Save the clipboard image to a file (or stdout with `-`)
+    Paste(paste::PasteArgs),
+
     /// Install integrations (Claude Code skill, etc.)
     Install(install::InstallArgs),
 
@@ -71,7 +82,14 @@ enum Commands {
     Completions(completions::CompletionsArgs),
 }
 
-fn main() -> Result<()> {
+fn main() {
+    if let Err(e) = run() {
+        report_error(&e);
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<()> {
     let cli = Cli::parse();
 
     let filter = if cli.verbose { "debug" } else { "warn" };
@@ -94,10 +112,25 @@ fn main() -> Result<()> {
         Commands::Favicon(a) => favicon::run(a),
         Commands::Split(a) => split::run(a),
         Commands::Transparent(a) => transparent::run(a),
+        Commands::Paste(a) => paste::run(a),
         Commands::Install(a) => install::run(a),
         Commands::Completions(a) => {
             let mut cmd = Cli::command();
             completions::run(a, &mut cmd)
         }
+    }
+}
+
+/// Render an error in the unified git-style format:
+///
+/// ```text
+/// error: <message>
+///   hint: <hint>   (zero or more)
+/// ```
+fn report_error(err: &anyhow::Error) {
+    let (msg, hints) = error::unpack(err);
+    eprintln!("{} {}", error_prefix(), msg);
+    for hint in hints {
+        eprintln!("  {} {}", hint_prefix(), hint);
     }
 }

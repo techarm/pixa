@@ -2,13 +2,19 @@ pub mod completions;
 pub mod compress;
 pub mod convert;
 pub mod detect;
+pub mod error;
 pub mod favicon;
 pub mod info;
+pub mod input;
 pub mod install;
+pub mod paste;
 pub mod remove_watermark;
 pub mod split;
 pub mod style;
 pub mod transparent;
+
+pub use error::bail_with_hints;
+pub use input::ImageSource;
 
 use anyhow::Result;
 use std::path::{Path, PathBuf};
@@ -66,6 +72,15 @@ pub fn ensure_parent(path: &Path) -> Result<()> {
         && !parent.as_os_str().is_empty()
     {
         std::fs::create_dir_all(parent)?;
+    }
+    Ok(())
+}
+
+/// Reject `--recursive` combined with `@clipboard` input. The clipboard
+/// carries a single image, so directory semantics don't apply.
+pub fn guard_clipboard_not_directory(src: &ImageSource, recursive: bool) -> Result<()> {
+    if src.is_clipboard() && recursive {
+        anyhow::bail!("--recursive cannot be combined with @clipboard input");
     }
     Ok(())
 }

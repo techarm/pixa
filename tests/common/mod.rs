@@ -81,3 +81,113 @@ pub fn tmp_png(w: u32, h: u32) -> (TempDir, std::path::PathBuf) {
     write_image(&gradient_rgb(w, h), &path);
     (dir, path)
 }
+
+/// Guard that serializes clipboard access across parallel tests.
+///
+/// The OS clipboard is a single resource shared across the entire
+/// user session — every process attached to that session reads and
+/// writes the same pasteboard. Without serialization, parallel tests
+/// in this binary race: one test sets a 96×72 image, another test
+/// overwrites it with 256×256 before the first asserts dimensions.
+/// Every clipboard-touching test must hold this lock for its entire
+/// lifetime: call `let _lock = common::clipboard_lock();` as the
+/// first line of the test.
+///
+/// Scope limitation: this `Mutex` only serializes within the current
+/// test binary. It does *not* protect against another process (or
+/// another `cargo test --test …` binary running in parallel) touching
+/// the same pasteboard. We rely on `cli_clipboard.rs` being the only
+/// clipboard-using test binary in the project; if a second one is
+/// added, swap to a lockfile-based mechanism.
+#[cfg(target_os = "macos")]
+pub fn clipboard_lock() -> std::sync::MutexGuard<'static, ()> {
+    use std::sync::Mutex;
+    static LOCK: Mutex<()> = Mutex::new(());
+    // If a previous test panicked while holding the lock the mutex is
+    // poisoned — recover the guard anyway; we don't care about state.
+    LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Place an RGBA image on the macOS clipboard. Used by the clipboard
+/// integration tests. NOTE: this clobbers whatever the developer has on
+/// their clipboard — expected in CI/isolated contexts, unfriendly on a
+/// dev workstation.
+#[cfg(target_os = "macos")]
+pub fn set_clipboard_image(img: &DynamicImage) {
+    use arboard::{Clipboard, ImageData};
+    let rgba = img.to_rgba8();
+    let (w, h) = (rgba.width() as usize, rgba.height() as usize);
+    let data = ImageData {
+        width: w,
+        height: h,
+        bytes: rgba.into_raw().into(),
+    };
+    Clipboard::new()
+        .expect("open clipboard")
+        .set_image(data)
+        .expect("set clipboard image");
+}
+
+/// Place raw PNG bytes onto the macOS pasteboard under `public.png`.
+/// Used to test the byte-passthrough path. The PNG bytes are written
+/// verbatim — no decode/re-encode — so `read_native_png()` should
+/// return exactly these bytes.
+#[cfg(target_os = "macos")]
+pub fn set_clipboard_png_bytes(png: &[u8]) {
+    use objc2_app_kit::NSPasteboard;
+    use objc2_foundation::{NSArray, NSData, NSString};
+
+    unsafe {
+        let pb = NSPasteboard::generalPasteboard();
+        // Clearing the pasteboard also drops any stale content like
+        // TIFF from a previous test's set_clipboard_image call.
+        let empty: objc2::rc::Retained<NSArray<NSString>> = NSArray::new();
+        pb.declareTypes_owner(&empty, None);
+
+        let png_type = NSString::from_str("public.png");
+        let data = NSData::with_bytes(png);
+        let _ = pb.setData_forType(Some(&data), &png_type);
+    }
+}
+
+/// Place a `public.file-url` entry on the macOS pasteboard, simulating
+/// a Finder Cmd+C on an image file. The URL points at `path` — the
+/// pasteboard only stores the URL, so `path` must exist on disk when
+/// the test reads it back.
+#[cfg(target_os = "macos")]
+pub fn set_clipboard_file_url(path: &Path) {
+    use objc2_app_kit::NSPasteboard;
+    use objc2_foundation::{NSArray, NSData, NSString};
+
+    // Build a `file://` URL with space characters percent-encoded so
+    // the test fixture exercises the same decoding path as real
+    // Finder output.
+    let encoded = percent_encode_path(path);
+    let url = format!("file://{encoded}");
+
+    unsafe {
+        let pb = NSPasteboard::generalPasteboard();
+        let empty: objc2::rc::Retained<NSArray<NSString>> = NSArray::new();
+        pb.declareTypes_owner(&empty, None);
+
+        let url_type = NSString::from_str("public.file-url");
+        let data = NSData::with_bytes(url.as_bytes());
+        let _ = pb.setData_forType(Some(&data), &url_type);
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn percent_encode_path(path: &Path) -> String {
+    let s = path.to_string_lossy();
+    let mut out = String::with_capacity(s.len());
+    for b in s.as_bytes() {
+        match b {
+            // Unreserved per RFC 3986 + `/` for path separator.
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b'/' => {
+                out.push(*b as char);
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
