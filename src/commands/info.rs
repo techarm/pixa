@@ -10,7 +10,8 @@ use super::style::{bold, cyan, dim, green, red};
 
 #[derive(Args)]
 pub struct InfoArgs {
-    /// Input image file, or @clipboard to read from the OS clipboard
+    /// Input image file. Use @clipboard (aliases: @clip, @c) to read the
+    /// image from the OS clipboard.
     pub input: PathBuf,
     /// Output as JSON
     #[arg(long)]

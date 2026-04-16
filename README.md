@@ -32,11 +32,16 @@ watermarks, and more.
 | `transparent`      | Key out a solid background color (chroma-key) to produce an RGBA PNG |
 | `remove-watermark` | Remove the Gemini AI watermark via Reverse Alpha Blending            |
 | `detect`           | Score whether a Gemini watermark is present in an image              |
+| `paste`            | Save the OS clipboard image to a file (or stdout)                    |
 | `install`          | Install the Claude Code skill so coding agents can use pixa          |
 
 `compress`, `convert`, `transparent`, and `remove-watermark` accept
 either a file or a directory — pass `-r/--recursive` to walk into
 subdirectories.
+
+Every image-processing command also accepts `@clipboard` (or the
+aliases `@clip` / `@c`) in place of a file path, reading directly from
+the OS clipboard. See [Clipboard input](#clipboard-input).
 
 > The watermark removal algorithm is adapted from
 > [GeminiWatermarkTool](https://github.com/allenk/GeminiWatermarkTool)
@@ -299,6 +304,58 @@ pixa detect image.jpg
 ```
 
 `--if-detected` skips images that don't actually contain a watermark.
+
+## Clipboard input
+
+Every image-processing command accepts `@clipboard` as the input
+argument, reading directly from the OS clipboard instead of a file
+path. The short aliases `@clip` and `@c` are equivalent — pick
+whichever you prefer:
+
+```bash
+pixa info      @clipboard                         # dimensions + format + EXIF
+pixa compress  @clipboard -o out.webp             # compress clipboard image
+pixa convert   @clip      out.png                 # @clip is a shorter alias
+pixa favicon   @c         -o ./favicons           # @c is the shortest
+pixa transparent @clipboard -o logo.png --bg '#FF00FF'
+pixa split     @clip      -o ./avatars --names a,b,c
+pixa rw        @c         -o clean.png
+```
+
+To save the clipboard image as a file (the inverse of `@clipboard`
+input), use the dedicated `paste` subcommand:
+
+```bash
+pixa paste screenshot.png                 # save clipboard → file
+pixa paste - --format png | some-tool     # write PNG bytes to stdout
+```
+
+**What the clipboard can carry.** pixa looks for (in priority order):
+
+1. **A file URL** (`public.file-url`) — e.g. you `Cmd+C`'d an image
+   file in Finder. pixa opens the source file directly, preserving
+   every byte of the original — including EXIF, ICC profile, and the
+   encoder's original compression settings. `pixa paste out.jpg` on a
+   copied JPEG produces an output that is bit-identical to the source
+   file.
+2. **Raw PNG bytes** (`public.png`) — e.g. you `Cmd+C`'d an image in
+   a browser. pixa writes the bytes verbatim to `pixa paste *.png`;
+   other target formats re-encode.
+3. **Decoded RGBA pixels** — any other clipboard image (TIFF from
+   Preview, a screenshot in memory, etc.), read via `arboard`.
+
+**Platforms.** macOS has full support for all three paths. Windows and
+Linux currently use decoded RGBA only (arboard); native byte-passthrough
+is tracked in follow-up issues [#20](https://github.com/techarm/pixa/issues/20)
+and [#21](https://github.com/techarm/pixa/issues/21). On a headless
+Linux/SSH session, clipboard commands surface a clear
+`clipboard unavailable (no display server…)` error instead of panicking.
+
+**Errors you may see.** `--recursive` and `@clipboard` can't be
+combined — the clipboard carries a single image. Commands whose
+`--output` flag is normally optional (default "next to the input")
+require `--output` when reading from `@clipboard`, since there's no
+sibling location to derive.
 
 ## Project layout
 

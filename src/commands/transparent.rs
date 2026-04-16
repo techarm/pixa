@@ -12,7 +12,8 @@ use super::{
 
 #[derive(Args)]
 pub struct TransparentArgs {
-    /// Input image file or directory, or @clipboard to read from the OS clipboard
+    /// Input image file or directory. Use @clipboard (aliases: @clip, @c)
+    /// to read the image from the OS clipboard.
     pub input: PathBuf,
     /// Output file or directory. Defaults to `<input>.transparent.png`
     /// (file) or `<input>.transparent/` (directory).

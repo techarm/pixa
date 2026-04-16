@@ -8,7 +8,8 @@ use super::style::{dim, fail_mark, green, ok_mark, red};
 
 #[derive(Args)]
 pub struct DetectArgs {
-    /// Input image file, or @clipboard to read from the OS clipboard
+    /// Input image file. Use @clipboard (aliases: @clip, @c) to read the
+    /// image from the OS clipboard.
     pub input: PathBuf,
     /// Output as JSON
     #[arg(long)]

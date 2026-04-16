@@ -18,11 +18,15 @@ Examples:
   pixa favicon logo.png -o ./favicon
   pixa convert photo.png photo.webp
   pixa info photo.jpg
-  pixa paste screenshot.png
-  pixa compress @clipboard -o out.webp
   pixa remove-watermark image.jpg -o clean.jpg
   pixa install --skills
   pixa completions zsh > ~/.zfunc/_pixa
+
+Reading from the clipboard (macOS full support; Win/Linux: arboard only):
+  pixa paste screenshot.png                    # save clipboard image
+  pixa compress @clipboard -o out.webp         # compress it
+  pixa info @clip                              # @clip is a shorter alias
+  pixa convert @c out.png                      # @c is the shortest alias
 ";
 
 #[derive(Parser)]

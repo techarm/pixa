@@ -11,7 +11,8 @@ use super::{
 
 #[derive(Args)]
 pub struct CompressArgs {
-    /// Input image file or directory, or @clipboard to read from the OS clipboard
+    /// Input image file or directory. Use @clipboard (aliases: @clip, @c)
+    /// to read the image from the OS clipboard.
     pub input: PathBuf,
     /// Output file or directory. If omitted, writes alongside the
     /// input with a `.min` suffix (file) or to a sibling

@@ -9,7 +9,8 @@ use super::style::{bold, dim, green, ok_mark};
 
 #[derive(Args)]
 pub struct FaviconArgs {
-    /// Input image file, or @clipboard to read from the OS clipboard
+    /// Input image file. Use @clipboard (aliases: @clip, @c) to read the
+    /// image from the OS clipboard.
     pub input: PathBuf,
     /// Output directory for the icon set
     #[arg(short, long, default_value = "favicon-output")]

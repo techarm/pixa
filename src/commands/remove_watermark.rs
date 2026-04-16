@@ -9,7 +9,8 @@ use super::{collect_inputs, ensure_parent, guard_clipboard_not_directory, mirror
 
 #[derive(Args)]
 pub struct RemoveWatermarkArgs {
-    /// Input image file or directory, or @clipboard to read from the OS clipboard
+    /// Input image file or directory. Use @clipboard (aliases: @clip, @c)
+    /// to read the image from the OS clipboard.
     pub input: PathBuf,
     /// Output file or directory (defaults to overwriting input)
     #[arg(short, long)]

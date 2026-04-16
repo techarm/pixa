@@ -10,7 +10,8 @@ use super::{
 
 #[derive(Args)]
 pub struct ConvertArgs {
-    /// Input image file or directory, or @clipboard to read from the OS clipboard
+    /// Input image file or directory. Use @clipboard (aliases: @clip, @c)
+    /// to read the image from the OS clipboard.
     pub input: PathBuf,
     /// Output file (single input) or directory (recursive)
     pub output: PathBuf,

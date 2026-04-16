@@ -10,8 +10,8 @@ use super::{ImageSource, bail_with_hints, ensure_parent, format_size};
 
 #[derive(Args)]
 pub struct SplitArgs {
-    /// Input sheet image (objects on a single-color background),
-    /// or @clipboard to read from the OS clipboard
+    /// Input sheet image (objects on a single-color background). Use
+    /// @clipboard (aliases: @clip, @c) to read from the OS clipboard.
     pub input: PathBuf,
     /// Output directory for the cropped objects
     #[arg(short, long)]
