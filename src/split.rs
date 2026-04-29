@@ -134,15 +134,15 @@ pub fn detect_objects(img: &DynamicImage, opts: &SplitOptions) -> Result<SplitRe
             let raw_h = y1 - y0 + 1;
             let visual = ((raw_w.min(raw_h) as f64) * VISUAL_MARGIN_RATIO).round() as u32;
             let margin = EROSION_COMPENSATE + visual + opts.padding;
-            // Clip the cosmetic margin against neighbouring blob edges
-            // so adjacent crops can't both claim pixels in the gap
-            // between them. Each pair shares the gap at its midpoint.
+            // Per-side budget for the cosmetic margin: never reach
+            // past the midpoint of the gap to a neighbouring blob.
+            // This keeps adjacent crops from both claiming the same
+            // pixels.
             let left_limit = if idx == 0 {
                 0
             } else {
                 let prev_x1 = blobs[idx - 1].1;
-                let mid = (prev_x1 + x0) / 2;
-                mid + 1
+                ((prev_x1 + x0) / 2) + 1
             };
             let right_limit = if idx + 1 == blobs.len() {
                 w - 1
@@ -150,13 +150,16 @@ pub fn detect_objects(img: &DynamicImage, opts: &SplitOptions) -> Result<SplitRe
                 let next_x0 = blobs[idx + 1].0;
                 (x1 + next_x0) / 2
             };
-            let bx = x0.saturating_sub(margin).max(left_limit);
+            let left_avail = x0.saturating_sub(left_limit);
+            let right_avail = right_limit.saturating_sub(*x1);
+            // Apply the same horizontal margin on both sides so the
+            // sprite stays visually centred — pick the smallest of
+            // (requested margin, left budget, right budget).
+            let h_margin = margin.min(left_avail).min(right_avail);
+            let bx = x0 - h_margin;
+            let right_excl = x1 + 1 + h_margin;
             let by = y0.saturating_sub(margin);
-            let right_excl =
-                (x1.saturating_add(1).saturating_add(margin)).min(right_limit.saturating_add(1));
             let bottom_excl = y1.saturating_add(1).saturating_add(margin).min(h);
-            // Skip degenerate crops: blobs that overlap their neighbour
-            // can leave bx >= right_excl after clipping.
             if right_excl <= bx || bottom_excl <= by {
                 continue;
             }
