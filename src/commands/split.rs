@@ -26,9 +26,11 @@ pub struct SplitArgs {
     /// Always write a `<basename>-preview.png` next to the input
     #[arg(long)]
     pub preview: bool,
-    /// What to draw in the preview image
-    #[arg(long, value_enum, default_value = "output")]
-    pub preview_style: PreviewStyleArg,
+    /// What to draw in the preview image. Defaults to `output` when
+    /// `--uniform` is set (the uniform-bbox frame matches what gets
+    /// saved), otherwise `detected` (the tight per-object bbox).
+    #[arg(long, value_enum)]
+    pub preview_style: Option<PreviewStyleArg>,
     /// Replace the detected background with transparency in each output.
     /// Uses the same chroma-key logic as `pixa transparent`.
     #[arg(long)]
@@ -48,6 +50,12 @@ pub struct SplitArgs {
     /// this many pixels.
     #[arg(long, default_value = "0", requires = "transparent")]
     pub shrink: u32,
+    /// Pad every output to the largest detected bbox so all crops share
+    /// the same dimensions. Useful for sprite sheets / avatar swaps
+    /// where consistent positioning matters. By default each crop is
+    /// saved at its own tight bbox size.
+    #[arg(long)]
+    pub uniform: bool,
 }
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
@@ -126,9 +134,9 @@ pub fn run(args: SplitArgs) -> Result<()> {
         args.names.clone()
     };
 
-    // All outputs are uniformly sized to the largest detected bbox by
-    // padding the smaller crops with the background color (so we never
-    // accidentally include neighboring characters).
+    // With --uniform, all outputs are sized to the largest detected
+    // bbox by padding smaller crops with the background color. Without
+    // it, each crop is saved at its own tight bbox size.
     let (max_w, max_h) = split::max_dimensions(&result.objects);
 
     let name_width = names.iter().map(|s| s.chars().count()).max().unwrap_or(1);
@@ -152,11 +160,15 @@ pub fn run(args: SplitArgs) -> Result<()> {
             coord_col = dim(&coord),
         );
     }
-    println!(
-        "\n{} all outputs padded to {}",
-        dim("output size:"),
-        red(&format!("{max_w}×{max_h}"))
-    );
+    if args.uniform {
+        println!(
+            "\n{} all outputs padded to {}",
+            dim("output size:"),
+            red(&format!("{max_w}×{max_h}"))
+        );
+    } else {
+        println!("\n{} tight per-object bbox", dim("output size:"));
+    }
     println!();
 
     // Save crops
@@ -166,12 +178,17 @@ pub fn run(args: SplitArgs) -> Result<()> {
     let mut total_size = 0u64;
     let mut saved_paths = Vec::new();
     for (name, obj) in names.iter().zip(result.objects.iter()) {
+        let (canvas_w, canvas_h) = if args.uniform {
+            (max_w, max_h)
+        } else {
+            (obj.w, obj.h)
+        };
         let cropped = if args.transparent {
             crop_padded_transparent(
                 &img,
                 obj,
-                max_w,
-                max_h,
+                canvas_w,
+                canvas_h,
                 result.background,
                 args.tolerance,
                 args.despill,
@@ -179,7 +196,7 @@ pub fn run(args: SplitArgs) -> Result<()> {
                 args.shrink,
             )
         } else {
-            split::crop_padded(&img, obj, max_w, max_h, result.background)
+            split::crop_padded(&img, obj, canvas_w, canvas_h, result.background)
         };
         let path = args.output.join(format!("{name}.png"));
         ensure_parent(&path)?;
@@ -206,8 +223,13 @@ pub fn run(args: SplitArgs) -> Result<()> {
     }
 
     if args.preview {
+        let style: PreviewStyle = match args.preview_style {
+            Some(s) => s.into(),
+            None if args.uniform => PreviewStyle::Output,
+            None => PreviewStyle::Detected,
+        };
         let preview = preview_path(&source);
-        split::write_preview(&img, &result, args.preview_style.into(), &preview)
+        split::write_preview(&img, &result, style, &preview)
             .with_context(|| format!("Failed to write preview: {}", preview.display()))?;
         println!("\npreview {} {}", arrow(), preview.display());
     }

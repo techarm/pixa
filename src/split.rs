@@ -7,11 +7,22 @@
 //! The detection pipeline is:
 //!   1. Estimate background color from corner patches.
 //!   2. Build a foreground mask using RGB distance + 1-px erosion.
-//!   3. Column projection to split horizontally into blobs.
-//!   4. For each blob, row projection to find the largest vertical run
-//!      (this excludes text labels printed below the object).
-//!   5. If an expected count is given, re-split the widest blob at its
-//!      column-projection minimum until the count matches.
+//!   3. 2D connected-component labeling on the mask. Each fox / sprite
+//!      ends up as a single component because its parts are physically
+//!      connected; near-touching neighbours stay separate as long as
+//!      even a 1-pixel background gap exists between them.
+//!   4. Union components whose x-ranges overlap by at least 50% of the
+//!      narrower component's width AND whose y-ranges overlap. This
+//!      rejoins parts that erosion fragmented (e.g. a head outline
+//!      detached from its body). Components with no y-overlap (text
+//!      labels below the sprite row) stay separate and get filtered
+//!      out by a size check.
+//!   5. For each merged group, row projection within its x-range finds
+//!      the largest vertical run, trimming any text that happens to
+//!      live inside the same connected component.
+//!   6. If an expected count is given, fall back to column-min
+//!      re-splitting on the widest blob — only triggers when CCs are
+//!      truly merged by a 1-pixel bridge.
 
 use image::{DynamicImage, GenericImageView, Rgb, Rgba, RgbaImage};
 use serde::{Deserialize, Serialize};
@@ -61,9 +72,7 @@ pub struct SplitResult {
     pub resplit_used: bool,
 }
 
-const FG_DISTANCE_THRESHOLD: f64 = 30.0;
-const GAP_FG_RATIO: f64 = 0.01;
-const MIN_GAP_RATIO: f64 = 0.01;
+const FG_DISTANCE_THRESHOLD: f64 = 12.0;
 const CORNER_PATCH: u32 = 20;
 /// Pixels added to each bbox edge to compensate for the 1-px erosion
 /// applied during mask building.
@@ -85,8 +94,7 @@ pub fn detect_objects(img: &DynamicImage, opts: &SplitOptions) -> Result<SplitRe
     let mask = build_mask(&rgb, bg);
     let mask = erode_3x3(&mask, w, h);
 
-    let col_count = column_projection(&mask, w, h);
-    let mut blobs = find_blobs(&col_count, w, h);
+    let mut blobs = find_blobs_cc(&mask, w, h);
 
     if blobs.is_empty() {
         return Err(SplitError::NoObjects);
@@ -96,6 +104,7 @@ pub fn detect_objects(img: &DynamicImage, opts: &SplitOptions) -> Result<SplitRe
     if let Some(expected) = opts.expected_count {
         if blobs.len() < expected {
             let original = blobs.len();
+            let col_count = column_projection(&mask, w, h);
             blobs =
                 resplit_to_match(blobs, &col_count, expected).ok_or(SplitError::CountMismatch {
                     detected: original,
@@ -119,21 +128,46 @@ pub fn detect_objects(img: &DynamicImage, opts: &SplitOptions) -> Result<SplitRe
     //   - VISUAL_MARGIN_RATIO * min(bw, bh) (proportional breathing room)
     //   - opts.padding (user-requested extra)
     let mut objects = Vec::with_capacity(blobs.len());
-    for (x0, x1) in &blobs {
+    for (idx, (x0, x1)) in blobs.iter().enumerate() {
         if let Some((y0, y1)) = row_extent(&mask, w, h, *x0, *x1) {
             let raw_w = x1 - x0 + 1;
             let raw_h = y1 - y0 + 1;
             let visual = ((raw_w.min(raw_h) as f64) * VISUAL_MARGIN_RATIO).round() as u32;
             let margin = EROSION_COMPENSATE + visual + opts.padding;
-            let bx = x0.saturating_sub(margin);
+            // Per-side budget for the cosmetic margin: never reach
+            // past the midpoint of the gap to a neighbouring blob.
+            // This keeps adjacent crops from both claiming the same
+            // pixels.
+            let left_limit = if idx == 0 {
+                0
+            } else {
+                let prev_x1 = blobs[idx - 1].1;
+                ((prev_x1 + x0) / 2) + 1
+            };
+            let right_limit = if idx + 1 == blobs.len() {
+                w - 1
+            } else {
+                let next_x0 = blobs[idx + 1].0;
+                (x1 + next_x0) / 2
+            };
+            let left_avail = x0.saturating_sub(left_limit);
+            let right_avail = right_limit.saturating_sub(*x1);
+            // Apply the same horizontal margin on both sides so the
+            // sprite stays visually centred — pick the smallest of
+            // (requested margin, left budget, right budget).
+            let h_margin = margin.min(left_avail).min(right_avail);
+            let bx = x0 - h_margin;
+            let right_excl = x1 + 1 + h_margin;
             let by = y0.saturating_sub(margin);
-            let bw = (*x1 + 1 + margin).min(w) - bx;
-            let bh = (y1 + 1 + margin).min(h) - by;
+            let bottom_excl = y1.saturating_add(1).saturating_add(margin).min(h);
+            if right_excl <= bx || bottom_excl <= by {
+                continue;
+            }
             objects.push(DetectedObject {
                 x: bx,
                 y: by,
-                w: bw,
-                h: bh,
+                w: right_excl - bx,
+                h: bottom_excl - by,
             });
         }
     }
@@ -286,48 +320,211 @@ fn column_projection(mask: &[bool], w: u32, h: u32) -> Vec<u32> {
     out
 }
 
-/// Group columns into (x_start, x_end) intervals using gap detection.
-fn find_blobs(col_count: &[u32], w: u32, h: u32) -> Vec<(u32, u32)> {
-    let gap_threshold = (h as f64 * GAP_FG_RATIO).max(1.0) as u32;
-    let min_gap_width = ((w as f64 * MIN_GAP_RATIO) as u32).max(2);
+#[derive(Debug, Clone, Copy)]
+struct Component {
+    x0: u32,
+    y0: u32,
+    x1: u32,
+    y1: u32,
+    area: u32,
+}
 
-    // First pass: mark each column as gap or not.
-    let is_gap: Vec<bool> = col_count.iter().map(|&c| c < gap_threshold).collect();
-
-    // Walk left-to-right, collapsing short "gap" runs into the surrounding blob.
-    let mut blobs = Vec::new();
-    let mut i = 0u32;
-    while i < w {
-        // skip leading gap
-        while i < w && is_gap[i as usize] {
-            i += 1;
-        }
-        if i >= w {
-            break;
-        }
-        let start = i;
-        let mut end = i;
-        loop {
-            // Extend through non-gap columns
-            while i < w && !is_gap[i as usize] {
-                end = i;
-                i += 1;
-            }
-            // Look ahead: is the next gap short enough to bridge?
-            let gap_start = i;
-            while i < w && is_gap[i as usize] {
-                i += 1;
-            }
-            let gap_len = i - gap_start;
-            if i < w && gap_len < min_gap_width {
-                // bridge: continue extending the same blob
+/// 2D connected-component labeling via iterative DFS, 8-connected.
+/// Each foreground pixel ends up in exactly one component.
+fn connected_components(mask: &[bool], w: u32, h: u32) -> Vec<Component> {
+    let mut visited = vec![false; mask.len()];
+    let mut stack: Vec<(u32, u32)> = Vec::new();
+    let mut comps = Vec::new();
+    for sy in 0..h {
+        for sx in 0..w {
+            let si = (sy * w + sx) as usize;
+            if !mask[si] || visited[si] {
                 continue;
             }
-            break;
+            visited[si] = true;
+            stack.clear();
+            stack.push((sx, sy));
+            let mut x0 = sx;
+            let mut x1 = sx;
+            let mut y0 = sy;
+            let mut y1 = sy;
+            let mut area = 0u32;
+            while let Some((cx, cy)) = stack.pop() {
+                area += 1;
+                if cx < x0 {
+                    x0 = cx;
+                }
+                if cx > x1 {
+                    x1 = cx;
+                }
+                if cy < y0 {
+                    y0 = cy;
+                }
+                if cy > y1 {
+                    y1 = cy;
+                }
+                let xmin = cx.saturating_sub(1);
+                let xmax = (cx + 1).min(w - 1);
+                let ymin = cy.saturating_sub(1);
+                let ymax = (cy + 1).min(h - 1);
+                for ny in ymin..=ymax {
+                    for nx in xmin..=xmax {
+                        let ni = (ny * w + nx) as usize;
+                        if mask[ni] && !visited[ni] {
+                            visited[ni] = true;
+                            stack.push((nx, ny));
+                        }
+                    }
+                }
+            }
+            comps.push(Component {
+                x0,
+                y0,
+                x1,
+                y1,
+                area,
+            });
         }
-        blobs.push((start, end));
     }
-    blobs
+    comps
+}
+
+fn uf_find(parent: &mut [usize], mut i: usize) -> usize {
+    while parent[i] != i {
+        parent[i] = parent[parent[i]];
+        i = parent[i];
+    }
+    i
+}
+
+/// Group connected components into per-object x-ranges.
+///
+/// Two components are unified when their x-ranges overlap by at least
+/// 50% of the narrower component AND their y-ranges overlap. This
+/// rejoins a sprite that erosion fragmented (e.g. fox head + hoodie
+/// split at a thin neck), while keeping a text label underneath
+/// separate (no y-overlap with the sprite above it). After grouping,
+/// small leftover groups are dropped as labels / noise.
+fn find_blobs_cc(mask: &[bool], w: u32, h: u32) -> Vec<(u32, u32)> {
+    let raw = connected_components(mask, w, h);
+    if raw.is_empty() {
+        return Vec::new();
+    }
+
+    // Drop dust / single-pixel JPEG noise: components below 0.01% of
+    // image area are never sprites.
+    let noise_threshold = (((w as u64) * (h as u64)) as f64 * 0.0001).max(8.0) as u32;
+    let comps: Vec<Component> = raw
+        .into_iter()
+        .filter(|c| c.area > noise_threshold)
+        .collect();
+    if comps.is_empty() {
+        return Vec::new();
+    }
+
+    let n = comps.len();
+    let mut parent: Vec<usize> = (0..n).collect();
+    for i in 0..n {
+        for j in (i + 1)..n {
+            let a = &comps[i];
+            let b = &comps[j];
+            // x-overlap relative to narrower component
+            let xo_start = a.x0.max(b.x0);
+            let xo_end = a.x1.min(b.x1);
+            if xo_end < xo_start {
+                continue;
+            }
+            let xo = xo_end - xo_start + 1;
+            let smaller_x = (a.x1 - a.x0 + 1).min(b.x1 - b.x0 + 1);
+            if (xo as f64) < (smaller_x as f64) * 0.5 {
+                continue;
+            }
+            // y-overlap must be > 0 to fuse — keeps text labels apart.
+            if a.y1 < b.y0 || b.y1 < a.y0 {
+                continue;
+            }
+            let ra = uf_find(&mut parent, i);
+            let rb = uf_find(&mut parent, j);
+            if ra != rb {
+                parent[ra] = rb;
+            }
+        }
+    }
+
+    // Collapse each union-find class into a merged Component.
+    let mut groups: std::collections::HashMap<usize, Component> = std::collections::HashMap::new();
+    for (i, &c) in comps.iter().enumerate() {
+        let r = uf_find(&mut parent, i);
+        groups
+            .entry(r)
+            .and_modify(|m| {
+                m.x0 = m.x0.min(c.x0);
+                m.x1 = m.x1.max(c.x1);
+                m.y0 = m.y0.min(c.y0);
+                m.y1 = m.y1.max(c.y1);
+                m.area = m.area.saturating_add(c.area);
+            })
+            .or_insert(c);
+    }
+    let mut grouped: Vec<Component> = groups.into_values().collect();
+
+    // Drop a group if it's both (a) noticeably smaller than the
+    // largest group AND (b) doesn't y-overlap any larger group.
+    // Captures text labels printed below the row of sprites without
+    // dropping legitimately smaller sprites that line up with the
+    // others.
+    let max_area = grouped.iter().map(|c| c.area).max().unwrap_or(0);
+    let small_cutoff = ((max_area as f64) * 0.30) as u32;
+    let snapshot = grouped.clone();
+    grouped.retain(|c| {
+        if c.area >= small_cutoff {
+            return true;
+        }
+        // Only large neighbours count. This stops a row of text glyphs
+        // from vouching for each other.
+        snapshot
+            .iter()
+            .any(|o| o.area >= small_cutoff && !(c.y1 < o.y0 || c.y0 > o.y1))
+    });
+
+    grouped.sort_by_key(|c| c.x0);
+
+    // Re-attribute spillover columns: when two adjacent sprites'
+    // anti-aliased outlines bleed into each other's connected
+    // component, the spillover lives near the boundary as a sparse
+    // tail. For each adjacent pair, find the column-density valley in
+    // the overlap zone and clip the left group's right edge / the
+    // right group's left edge to it. This pulls back any low-density
+    // tail that crossed the natural gap between the sprites.
+    let col_count = column_projection(mask, w, h);
+    for i in 0..grouped.len().saturating_sub(1) {
+        let a = grouped[i];
+        let b = grouped[i + 1];
+        if a.x1 < b.x0 {
+            continue; // groups already disjoint
+        }
+        // Confine the valley scan to the actual x-overlap. Without
+        // this, when `a` extends past `b.x1` (one group fully spans
+        // the next), `min_x` could land outside b's bbox and push
+        // grouped[i+1].x0 past b.x1.
+        let lo = a.x0.max(b.x0);
+        let hi = a.x1.min(b.x1);
+        if hi < lo {
+            continue;
+        }
+        let (mut min_x, mut min_v) = (lo, col_count[lo as usize]);
+        for x in lo..=hi {
+            let v = col_count[x as usize];
+            if v < min_v {
+                min_v = v;
+                min_x = x;
+            }
+        }
+        grouped[i].x1 = min_x.saturating_sub(1).max(a.x0);
+        grouped[i + 1].x0 = (min_x + 1).min(b.x1);
+    }
+
+    grouped.into_iter().map(|c| (c.x0, c.x1)).collect()
 }
 
 /// For columns x in [x0, x1], find the largest connected vertical run
@@ -653,5 +850,48 @@ mod tests {
         let res = detect_objects(&dy, &opts).unwrap();
         assert_eq!(res.objects.len(), 2);
         assert!(res.resplit_used);
+    }
+
+    #[test]
+    fn separates_pixel_disconnected_sprites_with_overlapping_columns() {
+        // Two sprites whose column projections overlap (their x-ranges
+        // share columns 60..80) but which are pixel-disconnected (a
+        // y-gap of 30 rows separates them). The old 1D column-projection
+        // detector would collapse them into one wide blob; CC labelling
+        // must keep them apart.
+        let mut img = solid_bg(200, 200);
+        fill_rect(&mut img, 20, 20, 60, 100, [50, 50, 50]); // top-left
+        fill_rect(&mut img, 60, 150, 80, 30, [50, 50, 50]); // bottom-right
+        let dy = DynamicImage::ImageRgb8(img);
+        let res = detect_objects(&dy, &SplitOptions::default()).unwrap();
+        assert_eq!(
+            res.objects.len(),
+            2,
+            "expected 2 disconnected sprites, got {}",
+            res.objects.len()
+        );
+    }
+
+    #[test]
+    fn neighbour_margin_clip_prevents_bbox_leak() {
+        // Two sprites placed close enough that the cosmetic margin
+        // would otherwise pull each bbox into the other's pixels.
+        // The clip step in detect_objects must keep the bboxes
+        // strictly disjoint in x.
+        let mut img = solid_bg(200, 100);
+        fill_rect(&mut img, 20, 20, 50, 60, [50, 50, 50]); // x=20..69
+        fill_rect(&mut img, 75, 20, 50, 60, [50, 50, 50]); // x=75..124
+        let dy = DynamicImage::ImageRgb8(img);
+        let res = detect_objects(&dy, &SplitOptions::default()).unwrap();
+        assert_eq!(res.objects.len(), 2);
+        let mut sorted = res.objects.clone();
+        sorted.sort_by_key(|o| o.x);
+        let left_right_edge = sorted[0].x + sorted[0].w;
+        assert!(
+            left_right_edge <= sorted[1].x,
+            "bboxes overlap: left ends at {}, right starts at {}",
+            left_right_edge,
+            sorted[1].x
+        );
     }
 }
