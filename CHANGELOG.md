@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/techarm/pixa/compare/v0.1.7...v0.2.0) - 2026-04-29
+
+### Added
+
+- *(clipboard)* Add @clipboard input and pixa paste subcommand (macOS phase 1) ([#22](https://github.com/techarm/pixa/pull/22))
+
+### Fixed
+
+- *(split)* [**breaking**] Detect sprites via connected components; tight crops by default ([#24](https://github.com/techarm/pixa/pull/24))
+
 ## [0.1.7](https://github.com/techarm/pixa/compare/v0.1.6...v0.1.7) - 2026-04-15
 
 ### Fixed
