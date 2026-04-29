@@ -503,8 +503,15 @@ fn find_blobs_cc(mask: &[bool], w: u32, h: u32) -> Vec<(u32, u32)> {
         if a.x1 < b.x0 {
             continue; // groups already disjoint
         }
-        let lo = b.x0;
-        let hi = a.x1;
+        // Confine the valley scan to the actual x-overlap. Without
+        // this, when `a` extends past `b.x1` (one group fully spans
+        // the next), `min_x` could land outside b's bbox and push
+        // grouped[i+1].x0 past b.x1.
+        let lo = a.x0.max(b.x0);
+        let hi = a.x1.min(b.x1);
+        if hi < lo {
+            continue;
+        }
         let (mut min_x, mut min_v) = (lo, col_count[lo as usize]);
         for x in lo..=hi {
             let v = col_count[x as usize];
