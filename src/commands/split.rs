@@ -26,9 +26,11 @@ pub struct SplitArgs {
     /// Always write a `<basename>-preview.png` next to the input
     #[arg(long)]
     pub preview: bool,
-    /// What to draw in the preview image
-    #[arg(long, value_enum, default_value = "output")]
-    pub preview_style: PreviewStyleArg,
+    /// What to draw in the preview image. Defaults to `output` when
+    /// `--uniform` is set (the uniform-bbox frame matches what gets
+    /// saved), otherwise `detected` (the tight per-object bbox).
+    #[arg(long, value_enum)]
+    pub preview_style: Option<PreviewStyleArg>,
     /// Replace the detected background with transparency in each output.
     /// Uses the same chroma-key logic as `pixa transparent`.
     #[arg(long)]
@@ -221,8 +223,13 @@ pub fn run(args: SplitArgs) -> Result<()> {
     }
 
     if args.preview {
+        let style: PreviewStyle = match args.preview_style {
+            Some(s) => s.into(),
+            None if args.uniform => PreviewStyle::Output,
+            None => PreviewStyle::Detected,
+        };
         let preview = preview_path(&source);
-        split::write_preview(&img, &result, args.preview_style.into(), &preview)
+        split::write_preview(&img, &result, style, &preview)
             .with_context(|| format!("Failed to write preview: {}", preview.display()))?;
         println!("\npreview {} {}", arrow(), preview.display());
     }

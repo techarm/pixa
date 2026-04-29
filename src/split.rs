@@ -11,13 +11,15 @@
 //!      ends up as a single component because its parts are physically
 //!      connected; near-touching neighbours stay separate as long as
 //!      even a 1-pixel background gap exists between them.
-//!   4. Group small components into the nearest main component when
-//!      their x-range falls inside it AND their y-range overlaps it
-//!      (handles ears or accessories that erosion split off). Small
-//!      components with no y-overlap (text labels below) are dropped.
-//!   5. For each component, row projection within its x-range finds
+//!   4. Union components whose x-ranges overlap by at least 50% of the
+//!      narrower component's width AND whose y-ranges overlap. This
+//!      rejoins parts that erosion fragmented (e.g. a head outline
+//!      detached from its body). Components with no y-overlap (text
+//!      labels below the sprite row) stay separate and get filtered
+//!      out by a size check.
+//!   5. For each merged group, row projection within its x-range finds
 //!      the largest vertical run, trimming any text that happens to
-//!      be inside the same connected component.
+//!      live inside the same connected component.
 //!   6. If an expected count is given, fall back to column-min
 //!      re-splitting on the widest blob — only triggers when CCs are
 //!      truly merged by a 1-pixel bridge.
@@ -133,22 +135,36 @@ pub fn detect_objects(img: &DynamicImage, opts: &SplitOptions) -> Result<SplitRe
             let visual = ((raw_w.min(raw_h) as f64) * VISUAL_MARGIN_RATIO).round() as u32;
             let margin = EROSION_COMPENSATE + visual + opts.padding;
             // Clip the cosmetic margin against neighbouring blob edges
-            // so the crop never reaches into another sprite's bbox.
-            let left_limit = if idx == 0 { 0 } else { blobs[idx - 1].1 + 1 };
+            // so adjacent crops can't both claim pixels in the gap
+            // between them. Each pair shares the gap at its midpoint.
+            let left_limit = if idx == 0 {
+                0
+            } else {
+                let prev_x1 = blobs[idx - 1].1;
+                let mid = (prev_x1 + x0) / 2;
+                mid + 1
+            };
             let right_limit = if idx + 1 == blobs.len() {
                 w - 1
             } else {
-                blobs[idx + 1].0.saturating_sub(1)
+                let next_x0 = blobs[idx + 1].0;
+                (x1 + next_x0) / 2
             };
             let bx = x0.saturating_sub(margin).max(left_limit);
             let by = y0.saturating_sub(margin);
-            let bw = (*x1 + 1 + margin).min(right_limit + 1) - bx;
-            let bh = (y1 + 1 + margin).min(h) - by;
+            let right_excl =
+                (x1.saturating_add(1).saturating_add(margin)).min(right_limit.saturating_add(1));
+            let bottom_excl = y1.saturating_add(1).saturating_add(margin).min(h);
+            // Skip degenerate crops: blobs that overlap their neighbour
+            // can leave bx >= right_excl after clipping.
+            if right_excl <= bx || bottom_excl <= by {
+                continue;
+            }
             objects.push(DetectedObject {
                 x: bx,
                 y: by,
-                w: bw,
-                h: bh,
+                w: right_excl - bx,
+                h: bottom_excl - by,
             });
         }
     }
@@ -824,5 +840,48 @@ mod tests {
         let res = detect_objects(&dy, &opts).unwrap();
         assert_eq!(res.objects.len(), 2);
         assert!(res.resplit_used);
+    }
+
+    #[test]
+    fn separates_pixel_disconnected_sprites_with_overlapping_columns() {
+        // Two sprites whose column projections overlap (their x-ranges
+        // share columns 60..80) but which are pixel-disconnected (a
+        // y-gap of 30 rows separates them). The old 1D column-projection
+        // detector would collapse them into one wide blob; CC labelling
+        // must keep them apart.
+        let mut img = solid_bg(200, 200);
+        fill_rect(&mut img, 20, 20, 60, 100, [50, 50, 50]); // top-left
+        fill_rect(&mut img, 60, 150, 80, 30, [50, 50, 50]); // bottom-right
+        let dy = DynamicImage::ImageRgb8(img);
+        let res = detect_objects(&dy, &SplitOptions::default()).unwrap();
+        assert_eq!(
+            res.objects.len(),
+            2,
+            "expected 2 disconnected sprites, got {}",
+            res.objects.len()
+        );
+    }
+
+    #[test]
+    fn neighbour_margin_clip_prevents_bbox_leak() {
+        // Two sprites placed close enough that the cosmetic margin
+        // would otherwise pull each bbox into the other's pixels.
+        // The clip step in detect_objects must keep the bboxes
+        // strictly disjoint in x.
+        let mut img = solid_bg(200, 100);
+        fill_rect(&mut img, 20, 20, 50, 60, [50, 50, 50]); // x=20..69
+        fill_rect(&mut img, 75, 20, 50, 60, [50, 50, 50]); // x=75..124
+        let dy = DynamicImage::ImageRgb8(img);
+        let res = detect_objects(&dy, &SplitOptions::default()).unwrap();
+        assert_eq!(res.objects.len(), 2);
+        let mut sorted = res.objects.clone();
+        sorted.sort_by_key(|o| o.x);
+        let left_right_edge = sorted[0].x + sorted[0].w;
+        assert!(
+            left_right_edge <= sorted[1].x,
+            "bboxes overlap: left ends at {}, right starts at {}",
+            left_right_edge,
+            sorted[1].x
+        );
     }
 }
